@@ -49,6 +49,16 @@ DEFAULT_RATES = {
     "brokerage_intraday": {"flat": 20.0, "pct": 0.03, "min": 0.0},
     "dp_charge_per_scrip": 15.93,
     "round_stt": True,
+    # futures and options (F&O), STT as revised from 2026-04-01 (Finance Act 2026)
+    "fno": {
+        "stt_futures_sell_pct": 0.05,
+        "stt_options_sell_pct": 0.15,          # on the premium
+        "stt_options_exercise_pct": 0.15,      # on the intrinsic value, paid by the buyer of an exercised option
+        "exchange_txn_pct": {"NFO": {"FUT": 0.00183, "OPT": 0.03553}, "BFO": {"FUT": 0.0, "OPT": 0.0325}},
+        "stamp_futures_buy_pct": 0.002,
+        "stamp_options_buy_pct": 0.003,
+        "brokerage_per_order": 20.0,
+    },
 }
 CRORE = 1e7
 
@@ -113,6 +123,42 @@ def trade_costs(side, value, exchange="NSE", product="CNC", rates=None, dp=True)
     return out
 
 
+def fno_costs(side, value, kind="FUT", exchange="NFO", rates=None, exercise_intrinsic=0.0):
+    """Charges on one F&O order. value = price x quantity (the premium for options).
+
+    kind "FUT" or "OPT"; exchange "NFO" (NSE) or "BFO" (BSE). exercise_intrinsic: for an option
+    that expires in the money and is exercised, its intrinsic value x quantity (STT on exercise)."""
+    r = rates or DEFAULT_RATES
+    f = dict(DEFAULT_RATES["fno"])
+    f.update((r.get("fno") or {}))
+    side, kind, exchange = str(side).lower(), str(kind).upper(), str(exchange).upper()
+    if side not in ("buy", "sell"):
+        raise CostError("side must be buy or sell, got %r" % side)
+    if kind not in ("FUT", "OPT"):
+        raise CostError("kind must be FUT or OPT, got %r" % kind)
+    value = float(value)
+    if value < 0:
+        raise CostError("value must not be negative")
+    brokerage = float(f["brokerage_per_order"]) if value > 0 else 0.0
+    if kind == "FUT":
+        stt = value * float(f["stt_futures_sell_pct"]) / 100.0 if side == "sell" else 0.0
+        stamp = value * float(f["stamp_futures_buy_pct"]) / 100.0 if side == "buy" else 0.0
+    else:
+        stt = value * float(f["stt_options_sell_pct"]) / 100.0 if side == "sell" else 0.0
+        stamp = value * float(f["stamp_options_buy_pct"]) / 100.0 if side == "buy" else 0.0
+    stt += float(exercise_intrinsic or 0) * float(f["stt_options_exercise_pct"]) / 100.0
+    if r.get("round_stt", True):
+        stt = float(int(stt + 0.5))
+    ex = f["exchange_txn_pct"].get(exchange, f["exchange_txn_pct"]["NFO"])
+    exch = value * float(ex.get(kind, 0)) / 100.0
+    sebi = value * float(r.get("sebi_fee_per_crore", 10.0)) / CRORE
+    gst = (brokerage + exch + sebi) * float(r.get("gst_pct", 18.0)) / 100.0
+    out = {"brokerage": brokerage, "stt": stt, "exchange": exch, "sebi": sebi, "stamp": stamp, "gst": gst, "dp": 0.0}
+    out = {k: round(v, 2) for k, v in out.items()}
+    out["total"] = round(sum(out.values()), 2)
+    return out
+
+
 def roundtrip(entry_value, exit_value, exchange="NSE", product="CNC", rates=None):
     buy = trade_costs("buy", entry_value, exchange, product, rates)
     sell = trade_costs("sell", exit_value, exchange, product, rates)
@@ -172,6 +218,8 @@ def main(argv=None):
     ap.add_argument("--exit", type=float, help="roundtrip: the exit value in rupees")
     ap.add_argument("--exchange", default="NSE", choices=["NSE", "BSE"])
     ap.add_argument("--product", default="CNC", choices=["CNC", "MIS"], help="CNC delivery (default) or MIS intraday")
+    ap.add_argument("--fno", choices=["FUT", "OPT"], help="an F&O order instead: FUT (value = price x qty) or OPT "
+                                                        "(value = premium x qty)")
     ap.add_argument("--config", default="trader/config.json", help="reads \"charges\" overrides")
     ap.add_argument("--json", action="store_true")
     a = ap.parse_args(argv)
@@ -181,6 +229,26 @@ def main(argv=None):
             cfg = json.load(fh)
     rates = rates_from(cfg)
     try:
+        if a.fno:
+            exch = "BFO" if a.exchange == "BSE" else "NFO"
+            if a.what == "roundtrip":
+                exit_v = a.exit if a.exit is not None else a.value
+                b_, s_ = fno_costs("buy", a.value, a.fno, exch, rates), fno_costs("sell", exit_v, a.fno, exch, rates)
+                res = {"buy": b_, "sell": s_, "gross": round(exit_v - a.value, 2), "costs": round(b_["total"] + s_["total"], 2)}
+                res["net"] = round(res["gross"] - res["costs"], 2)
+                if a.json:
+                    print(json.dumps(res, indent=2))
+                else:
+                    print(render("buy", a.value, b_, exch, a.fno))
+                    print(render("sell", exit_v, s_, exch, a.fno))
+                    print("Gross %s, charges %s, net %s." % (inr(res["gross"]), inr(res["costs"]), inr(res["net"])))
+            else:
+                c = fno_costs(a.what, a.value, a.fno, exch, rates)
+                print(json.dumps(c, indent=2) if a.json else render(a.what, a.value, c, exch, a.fno))
+            if not a.json:
+                print("F&O rates as of %s (STT revised from 2026-04-01); your contract note is the final word. "
+                      "Income tax on F&O is separate: it is business income." % rates.get("as_of"))
+            return 0
         if a.what == "roundtrip":
             res = roundtrip(a.value, a.exit if a.exit is not None else a.value, a.exchange, a.product, rates)
             if a.json:

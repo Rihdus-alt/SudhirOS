@@ -60,6 +60,11 @@ DEFAULTS = {
     "allow_fno": False, "allow_intraday": False, "allow_mtf": False, "allow_short": False,
     "block_surveillance": True, "market_slippage_pct": 0.5, "max_price_age_hours": 30,
 }
+FNO_DEFAULTS = {"capital": None, "max_risk_per_trade_pct": 2.0, "max_lots_per_order": 5,
+                "allow_option_selling": False, "allow_expiry_day_entries": False,
+                "futures_margin_pct": {"index": 12.0, "stock": 20.0}}
+INDEX_LOTS = {"NIFTY": 65, "BANKNIFTY": 30, "FINNIFTY": 60, "MIDCPNIFTY": 120, "NIFTYNXT50": 25}
+UNDERLYING = re.compile(r"^([A-Z&\-]+?)\d{2}(?:JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC|[1-9OND]\d{2})")
 ORDER_FIELDS = ("variety", "exchange", "tradingsymbol", "transaction_type", "quantity", "product",
                 "order_type", "price", "trigger_price", "validity", "disclosed_quantity", "tag")
 PRODUCTS = {"CNC", "MIS", "MTF", "NRML"}
@@ -193,6 +198,29 @@ def check(orders, cfg, portfolio=None, prices=None, details=None, state=None, to
         reasons, warns = [], []
         sym = norm(o.get("tradingsymbol") or o.get("symbol"))
         exch = str(o.get("exchange", "NSE")).strip().upper()
+        if exch in ("NFO", "BFO"):
+            r = check_fno(o, c, acct, prices, details, today, sold_today)
+            side = r["side"]
+            key = (sym, side)
+            if key in seen:
+                r["reasons"].append("duplicate: a second %s %s in this batch" % (side, sym))
+            if key in placed_keys:
+                r["reasons"].append("duplicate: a %s %s was already placed today" % (side, sym))
+            passed_so_far = sum(1 for x in results if x["verdict"] == "PASS")
+            cap_n = int(c.get("max_orders_per_day") or 0)
+            if cap_n and count_today + passed_so_far >= cap_n:
+                r["reasons"].append("daily limit: %d placed today plus %d passed earlier in this batch, your limit is "
+                                    "%d a day" % (count_today, passed_so_far, cap_n))
+            seen.add(key)
+            verdict = "BLOCK" if r["reasons"] else "PASS"
+            if verdict == "PASS":
+                acct["cash"] -= r["cash_used"]
+            results.append({"index": i, "symbol": sym, "exchange": exch, "side": side, "quantity": o.get("quantity"),
+                            "order_type": str(o.get("order_type", "")).upper(), "price": o.get("price"),
+                            "value_inr": r["value"], "est_charges": r["charges"], "fingerprint": fingerprint(o),
+                            "verdict": verdict, "reasons": r["reasons"], "warnings": r["warnings"],
+                            "max_loss_inr": r.get("max_loss"), "margin_or_premium": r["cash_used"]})
+            continue
         side = str(o.get("transaction_type", o.get("side", ""))).strip().upper()
         product = str(o.get("product", "CNC")).strip().upper()
         typ = str(o.get("order_type", "MARKET")).strip().upper()
@@ -384,6 +412,119 @@ def check(orders, cfg, portfolio=None, prices=None, details=None, state=None, to
             "warnings": top_warn, "cash_after": round(acct["cash"], 2)}
 
 
+def check_fno(o, c, acct, prices, details, today, sold_today):
+    """Checks for one futures or options order (exchange NFO or BFO). Returns reasons, warnings and money."""
+    f = dict(FNO_DEFAULTS)
+    f.update(c.get("fno") or {})
+    rates = costs.rates_from(c)
+    reasons, warns = [], []
+    sym = norm(o.get("tradingsymbol") or o.get("symbol"))
+    exch = str(o.get("exchange")).upper()
+    side = str(o.get("transaction_type", o.get("side", ""))).strip().upper()
+    product = str(o.get("product", "NRML")).upper()
+    typ = str(o.get("order_type", "LIMIT")).upper()
+    qty, price, trig = o.get("quantity"), _f(o.get("price")), _f(o.get("trigger_price"))
+    closing = bool(o.get("closing"))
+    d = details.get(sym) or {}
+    if not c.get("allow_fno"):
+        reasons.append("product: futures and options are off (\"allow_fno\": false in trader/config.json); turn them "
+                       "on only after reading india-fno-plan's risk notes")
+    if not DERIVATIVE.match(sym or ""):
+        reasons.append("asset: %s is not an F&O trading symbol (NIFTY26OCT23000CE, NIFTY26O2723000CE, "
+                       "RELIANCE26OCTFUT)" % sym)
+    kind = "FUT" if sym.endswith("FUT") else "OPT"
+    m = UNDERLYING.match(sym or "")
+    under = (o.get("underlying") or (m.group(1) if m else "")).upper()
+    if side not in ("BUY", "SELL"):
+        reasons.append("format: transaction_type must be BUY or SELL")
+    if product not in ("NRML", "MIS"):
+        reasons.append("format: F&O product is NRML (carry forward) or MIS (intraday), not %s" % product)
+    if product == "MIS" and not c.get("allow_intraday"):
+        reasons.append("product: MIS is intraday; intraday is off (\"allow_intraday\": false)")
+    if typ not in TYPES or typ == "SL-M":
+        reasons.append("format: order_type %s is not allowed for F&O here (MARKET, LIMIT or SL)" % typ)
+    if typ in ("LIMIT", "SL") and not price:
+        reasons.append("format: a %s order needs a price" % typ)
+    if typ == "SL" and not trig:
+        reasons.append("format: an SL order needs a trigger_price")
+    if typ == "MARKET":
+        warns.append("MARKET order in F&O: thin strikes can fill far from the last price; a LIMIT caps it")
+    lot = int(o.get("lot_size") or d.get("lot_size") or INDEX_LOTS.get(under) or 0)
+    if not _is_int(qty) or _f(qty) <= 0:
+        reasons.append("format: quantity must be a positive whole number")
+        qty = 0
+    qty = int(_f(qty) or 0)
+    if not lot:
+        reasons.append("lots: no lot size for %s; the order must carry \"lot_size\" (india-fno-plan adds it)" % sym)
+    elif qty % lot:
+        reasons.append("lots: quantity %d is not a whole number of lots of %d" % (qty, lot))
+    elif qty // lot > int(f["max_lots_per_order"]) and not closing:
+        reasons.append("lots: %d lots is over your %d-lot limit per order" % (qty // lot, int(f["max_lots_per_order"])))
+    freeze = _f(d.get("freeze_qty"))
+    if freeze and qty > freeze:
+        reasons.append("lots: %d is over the exchange freeze quantity %d; split the order" % (qty, freeze))
+    if kind == "OPT" and side == "SELL" and not closing and not f["allow_option_selling"]:
+        reasons.append("short option: selling an option you do not hold has unlimited or large risk; option selling "
+                       "is off (\"allow_option_selling\": false). To exit a bought option, mark the order \"closing\"")
+    sl = _f(o.get("sl"))
+    if not closing and sl is None:
+        reasons.append("stop-loss: every F&O entry needs a stop (\"sl\"); plan it with india-fno-plan first")
+    if not closing and sl is not None and price:
+        wrong = (side == "BUY" and o.get("levels_on") == "premium" and sl >= price) or \
+                (side == "BUY" and o.get("levels_on") != "premium" and kind == "FUT" and sl >= price) or \
+                (side == "SELL" and kind == "FUT" and sl <= price)
+        if wrong:
+            reasons.append("stop-loss: %s is on the wrong side of the entry %s" % (sl, price))
+    exp = str(o.get("expiry") or "")
+    if exp and len(exp) >= 8:
+        exp_day = "%s-%s-%s" % (exp[:4], exp[4:6], exp[6:8])
+        if exp_day < today:
+            reasons.append("expiry: %s expired on %s" % (sym, exp_day))
+        elif exp_day == today and not closing and not f["allow_expiry_day_entries"]:
+            reasons.append("expiry: today is %s's expiry day; new positions are off (gamma and theta at their worst; "
+                           "\"allow_expiry_day_entries\": false)" % sym)
+        elif under not in INDEX_LOTS and not closing:
+            days = (datetime.date.fromisoformat(exp_day) - datetime.date.fromisoformat(today)).days
+            if days <= 4:
+                warns.append("stock F&O is settled by DELIVERY at expiry (%s): exit before, or have the shares or the "
+                             "cash ready" % exp_day)
+    hi_b, lo_b = _f(d.get("high_exec_band")), _f(d.get("low_exec_band"))
+    if price and hi_b and lo_b and typ in ("LIMIT", "SL") and not (lo_b - PAISA <= price <= hi_b + PAISA):
+        reasons.append("band: limit %s is outside the exchange's execution band %s to %s; it would be rejected"
+                       % (price, lo_b, hi_b))
+    ref = price or prices.get(sym)
+    value = (ref or 0) * qty
+    charges = costs.fno_costs(side.lower(), value, kind, exch, rates)["total"] if side in ("BUY", "SELL") and value else 0.0
+    is_index = under in INDEX_LOTS
+    if kind == "FUT":
+        cash_used = value * f["futures_margin_pct"]["index" if is_index else "stock"] / 100.0 + charges
+        if not closing:
+            warns.append("futures margin is an estimate (%s%% of %s); your broker's margin calculator is exact"
+                         % (f["futures_margin_pct"]["index" if is_index else "stock"], inr(value)))
+    else:
+        cash_used = (value + charges) if side == "BUY" else 0.0
+    if closing:
+        cash_used = 0.0
+    max_loss = _f(o.get("max_loss_inr"))
+    if max_loss is None and sl is not None and price and not closing:
+        max_loss = abs(price - sl) * qty + 2 * charges
+    total = acct["cash"] + sum(acct["values"].values())
+    cap_inr = float(f.get("capital") or total)
+    if max_loss is not None and not closing:
+        lim = cap_inr * float(f["max_risk_per_trade_pct"]) / 100.0
+        if max_loss > lim + 1:
+            reasons.append("risk: the loss at the stop is %s, over your %s%% per-trade limit of %s"
+                           % (inr(max_loss), _pct(f["max_risk_per_trade_pct"]), inr(lim)))
+    buffer_inr = total * float(c.get("cash_buffer_pct") or 0) / 100.0
+    if not closing and acct["cash"] - cash_used < buffer_inr - PAISA:
+        reasons.append("cash: needs about %s (%s) but leaves less than your %s buffer"
+                       % (inr(cash_used), "margin" if kind == "FUT" else "premium + charges", inr(buffer_inr)))
+    if kind == "OPT" and side == "BUY" and not closing:
+        warns.append("an option can expire worthless: the premium %s is the most this order can lose" % inr(value))
+    return {"side": side, "reasons": reasons, "warnings": warns, "value": round(value, 2), "charges": round(charges, 2),
+            "cash_used": round(cash_used, 2), "max_loss": round(max_loss, 2) if max_loss is not None else None}
+
+
 def _pct(x):
     x = float(x)
     return str(int(x)) if x == int(x) else ("%.2f" % x)
@@ -405,6 +546,10 @@ def report(res):
         lines.append("%-5s #%d %s %s x %s:%s, %s, about %s + %s charges"
                      % (r["verdict"], r["index"], r["side"], r["quantity"], r["exchange"], r["symbol"], how,
                         inr(r["value_inr"] or 0), inr(r["est_charges"])))
+        if r.get("max_loss_inr") is not None:
+            lines.append("        loss at the stop about %s; %s %s" % (inr(r["max_loss_inr"]),
+                                                                        "premium" if "FUT" not in r["symbol"] else "est. margin",
+                                                                        inr(r.get("margin_or_premium") or 0)))
         for x in r["reasons"]:
             lines.append("        - " + x)
         for x in r["warnings"]:

@@ -8,12 +8,14 @@ import unittest
 from _load import ROOT
 
 SKILLS = ["india-copycat", "india-news", "india-budget", "india-insider", "india-analyst", "india-screener",
-          "india-risk", "india-broker", "india-tax", "india-alerts", "india-rebalance", "india-costs"]
+          "india-risk", "india-broker", "india-tax", "india-alerts", "india-rebalance", "india-costs",
+          "india-fno-scan", "india-fno-plan", "india-fno-chain", "india-fno-backtest"]
 TOOLS = {"india-copycat": "copycat", "india-news": "news", "india-budget": "size", "india-insider": "insider",
          "india-analyst": "results", "india-screener": "screen", "india-risk": "check", "india-broker": "ticket",
-         "india-tax": "lots", "india-alerts": "alerts", "india-rebalance": "rebalance", "india-costs": "costs"}
+         "india-tax": "lots", "india-alerts": "alerts", "india-rebalance": "rebalance", "india-costs": "costs",
+         "india-fno-scan": "scan", "india-fno-plan": "plan", "india-fno-chain": "chain", "india-fno-backtest": "backtest"}
 ORDER_PATH = ["india-copycat", "india-budget", "india-insider", "india-risk", "india-broker", "india-tax",
-              "india-alerts", "india-rebalance"]
+              "india-alerts", "india-rebalance", "india-fno-scan", "india-fno-plan"]
 REPO = os.path.dirname(os.path.dirname(ROOT))
 
 
@@ -33,7 +35,7 @@ def text_files():
 
 
 class Repo(unittest.TestCase):
-    def test_twelve_skill_folders(self):
+    def test_sixteen_skill_folders(self):
         found = sorted(d for d in os.listdir(ROOT) if os.path.isfile(os.path.join(ROOT, d, "SKILL.md")))
         self.assertEqual(found, sorted(SKILLS))
         root = sorted(d for d in os.listdir(ROOT) if not d.startswith("."))

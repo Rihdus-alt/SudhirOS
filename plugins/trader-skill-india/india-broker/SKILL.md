@@ -113,6 +113,19 @@ prices and holdings, not orders.
    Act allows. A sell is matched first-in, first-out and logged for
    `/india-tax`. Then the next ticket.
 
+## F&O orders
+
+Orders from /india-fno-plan have exchange NFO, product NRML (carry forward)
+and whole lots; the ticket shows the lots and the plan's stop and targets.
+After the entry fills (on paper or for real), the ticket prints the
+protective SL order to place at once. F&O fills go to
+`trader/fno/journal.json` (positions, fills, realized P&L, charges), not to
+the demat lots: F&O is business income, not capital gains. Record real fills
+from the contract note with `ticket.py fill --symbol NIFTY26OCT22950PE
+--side SELL --qty 130 --price 320 --charges 103.09`; an F&O symbol is
+recognised and routed to the journal. Exiting a bought option: the SELL
+order carries `"closing": true`.
+
 ## Example: the reel
 
 ```

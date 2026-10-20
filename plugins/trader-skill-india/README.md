@@ -1,9 +1,11 @@
 # The Trader skill, India edition
 
-12 Claude skills for Indian stocks: copy a mutual fund or an investor from
-SEBI disclosures, watch NSE/BSE filings and insider trades, size every trade
-in whole shares with real charges, check SEBI and exchange rules, and never
-place an order without your yes.
+16 Claude skills for Indian stocks and F&O: copy a mutual fund or an investor
+from SEBI disclosures, watch NSE/BSE filings and insider trades, screen
+futures and options with a stop-loss, targets and a trailing stop that are
+backtested on real data, size every trade in whole shares or lots with real
+charges, check SEBI and exchange rules, and never place an order without
+your yes.
 
 It is the Indian version of [Jake Schincariol's trader-skill](https://github.com/Jakeschincariol/trader-skill)
 (MIT): the same safety design (proposals, a risk gate, one explicit yes per
@@ -32,7 +34,7 @@ cp -r SudhirOS/plugins/trader-skill-india/india-* ~/.claude/skills/
 
 The tools need Python 3.8 or newer. Nothing to pip install.
 
-## The twelve
+## The sixteen
 
 | command | job | what it does |
 | --- | --- | --- |
@@ -47,7 +49,11 @@ The tools need Python 3.8 or newer. Nothing to pip install.
 | `/india-tax` | Tax Optimizer | FIFO lots, STCG/LTCG at 12 months, the 23 July 2024 rate change, the Rs 1.25 lakh s.112A exemption, grandfathering for pre-2018 shares, set-off and carry forward, bonus/split adjustments, bonus stripping, loss and exemption harvesting, estimated tax. |
 | `/india-alerts` | Price Alerts | Targets, stops, percent moves and near-circuit alerts on the NSE clock (IST, pre-open, the official 2026 holidays, Muhurat); quotes from INDmoney, NSE or Yahoo with cross-checks and stale-quote flags. |
 | `/india-rebalance` | Rebalancer | Whole-share trades back to target for stocks outside the band, sells first, skips trades whose charges are not worth it. |
-| `/india-costs` | Trade Costs | Contract-note arithmetic: brokerage, STT, exchange, SEBI, stamp duty, GST, DP charge, and the breakeven move. |
+| `/india-costs` | Trade Costs | Contract-note arithmetic: brokerage, STT, exchange, SEBI, stamp duty, GST, DP charge, and the breakeven move; F&O charges with the April 2026 STT. |
+| `/india-fno-scan` | F&O Screener | Screens NIFTY, BANKNIFTY and F&O stocks for setups and gives each signal entry, SL, TP1, TP2, a trailing stop, lots for your risk, the option strike with premium levels, and the setup's own backtested track record. |
+| `/india-fno-plan` | F&O Planner | One trade, exactly: levels on the underlying, the futures (basis) and the option premium (Black-76 with decay), whole lots, the Kite symbol, the entry order and the protective SL/target orders; trails the stop each session, handles expiry and physical delivery, keeps the F&O journal. |
+| `/india-fno-chain` | Option Chain | Forward from put-call parity, IV and delta per strike, ATM IV and expected move, PCR, max pain, OI walls and additions, spreads. |
+| `/india-fno-backtest` | Backtester | The same rules replayed with no look-ahead and every charge: win rate with its 95% interval, break-even win rate, expectancy and t, out-of-sample split, a plain verdict. |
 
 ## How to use it
 
@@ -59,6 +65,8 @@ copycat -> budget -> risk -> broker                  (copy a fund or investor)
 news / insider / alerts                               (watch, on a schedule)
 analyst -> screener -> budget -> risk -> broker       (pick your own)
 rebalance / tax -> risk -> broker                     (maintain)
+fno-chain -> fno-scan -> fno-plan -> risk -> broker   (F&O, with fno-plan trail after each session)
+fno-backtest                                          (before trusting any setup)
 costs                                                 (any time)
 ```
 
@@ -83,6 +91,36 @@ INDmoney data and prices of the 2026-10-19 close):
 6. Then on a schedule: `/india-news` and `/india-insider` each evening,
    `/india-alerts` in market hours; each month `/india-copycat diff` and
    `/india-rebalance`; before 31 March, `/india-tax harvest`.
+
+## Futures and options: what "accuracy" means here
+
+No tool can make F&O trades accurate in the sense of knowing what happens
+next, and about 91% of individual F&O traders lost money in FY2024-25
+(SEBI's study; 87.7% in FY2025-26). What this pack makes accurate is
+everything that can be: the maths, the costs, the rules, and the measurement.
+
+- **The maths.** Implied volatility and greeks come from Black-76 on the
+  put-call-parity forward. On the real NIFTY chain of 2026-10-19 the 23000 CE
+  solves to 12.44% IV (INDmoney: 12.49%), delta 0.407 (0.41), gamma 0.00092
+  (0.0009), vega 13.14 (13.2), theta -10.19 (-10.07).
+- **The levels.** Stops sit beyond structure (swing points) within 0.75-3
+  ATR, targets at 1R/2R pulled in before OI walls, a chandelier trail that
+  only tightens, a time stop; option SL/TP come from repricing the option at
+  those levels with time decay, not from a fixed percent of premium.
+- **The odds, stated honestly.** With no edge, P(target before stop) is
+  exactly risk / (risk + reward). A setup has an edge only if its measured
+  win rate beats that, after costs.
+- **The measurement.** Every signal shows its own backtest on that
+  underlying. On a real year of NIFTY, RELIANCE and HDFC Bank daily bars, the
+  four setups pooled to 49 trades, 49% wins (95% interval 36-62%) against a
+  56% break-even: -0.11R a trade after costs, no edge. Trend pullbacks looked
+  significant in the first 70% of the data (+0.42R, t 2.5) and lost -0.45R in
+  the held-out 30%. The pack says this to you instead of hiding it.
+- **The rules.** Whole lots (NIFTY 65, BANKNIFTY 30 from the 2025 revision;
+  the chain's lot size wins), STT 0.05%/0.15% from April 2026, the exchange's
+  execution band, expiry on Tuesday (moved earlier for holidays), physical
+  delivery for stock F&O, no option selling and no expiry-day entries unless
+  you turn them on, a stop on every entry and a cap on the loss per trade.
 
 ## What changed from the US pack, for accuracy
 
@@ -128,6 +166,11 @@ python3 india-insider/insider.py pit --promoters --buys --days 30
 python3 india-news/news.py --symbols RELIANCE --bse 500325
 python3 india-analyst/results.py fetch INFY && python3 india-analyst/results.py read trader/state/results/INFY-*.xml
 python3 india-costs/costs.py roundtrip 24920 --exit 26000
+python3 india-fno-chain/chain.py nifty-chain.json --iv 23000CE=122.1                # IV, PCR, max pain, walls
+python3 india-fno-scan/scan.py --candles NIFTY-1d.json --chain NIFTY=nifty-chain.json --capital 500000
+python3 india-fno-plan/plan.py new NIFTY --candles NIFTY-1d.json --direction short --chain nifty-chain.json
+python3 india-fno-plan/plan.py trail NIFTY-20261019-OPT --candles NIFTY-1d.json      # after each session
+python3 india-fno-backtest/backtest.py NIFTY-1d.json RELIANCE-1d.json --lots RELIANCE=500 --split 0.3
 ```
 
 ```bash
@@ -170,6 +213,12 @@ site and refuses scripts at times: each SKILL.md says what to do then (the
 same page in a browser, or a downloaded file). Check anything that matters
 against your broker and the exchange.
 
+**F&O is high risk.** Futures and bought options can lose money fast; a
+bought option can expire worthless. F&O is off by default (`"allow_fno":
+false`); turning it on is your decision. Option selling, expiry-day entries
+and intraday stay off until you turn each of them on. A signal is a rule
+firing, never a forecast.
+
 **Taxes.** `/india-tax` does the Income-tax Act's arithmetic for a resident
 individual on listed shares. It is not tax advice; rates and rules are as of
 October 2026 (Budget 2026 left equity capital gains rates unchanged).
@@ -192,6 +241,10 @@ india-tax/        SKILL.md, lots.py, portfolio.example.json
 india-alerts/     SKILL.md, alerts.py, alerts.example.json
 india-rebalance/  SKILL.md, rebalance.py
 india-costs/      SKILL.md, costs.py
+india-fno-scan/   SKILL.md, scan.py
+india-fno-plan/   SKILL.md, plan.py, fnocore.py (the shared F&O engine)
+india-fno-chain/  SKILL.md, chain.py
+india-fno-backtest/ SKILL.md, backtest.py
 tests/            unittest suite + offline fixtures
 ```
 

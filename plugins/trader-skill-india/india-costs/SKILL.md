@@ -49,6 +49,19 @@ example `{"charges": {"brokerage_delivery": {"flat": 20, "pct": 0.1},
 "dp_charge_per_scrip": 18.5}}`, and check one real contract note against
 `costs.py` output once. The contract note is always the final word.
 
+## Futures and options
+
+`costs.py buy 1488110 --fno FUT` (one NIFTY lot) or `costs.py roundtrip 25902 --exit 41600 --fno OPT`
+(premium values). From 2026-04-01 (Finance Act 2026):
+
+| line | futures | options |
+| --- | --- | --- |
+| STT | 0.05% on the sell side | 0.15% of the premium on the sell side; 0.15% of the intrinsic value if exercised (buyer) |
+| exchange (NSE) | 0.00183% | 0.03553% of the premium |
+| stamp duty | 0.002% on the buy | 0.003% on the buy |
+| SEBI fee, GST | Rs 10 a crore; 18% of brokerage + exchange + SEBI | same |
+| brokerage | Rs 20 an order by default (`"fno": {"brokerage_per_order": ...}` under `"charges"`) | same |
+
 ## Steps
 
 1. Ask what trade: buy or sell, the value (price x quantity), NSE or BSE,

@@ -82,6 +82,20 @@ not lots; that is not enough for FIFO.
   Buybacks from 1 April 2026 are taxed as capital gains again; enter them as
   sales.
 
+## Futures and options (not capital gains)
+
+F&O profits and losses are **non-speculative business income** (s.43(5)
+proviso), taxed at the user's slab rate and reported in ITR-3, not under
+s.111A/112A. STT and charges paid on F&O are deductible business expenses.
+A net F&O loss can be set off against other income except salary in the same
+year, and carried forward 8 years against business income (file on time).
+Turnover for the tax-audit threshold is the sum of the absolute profit or
+loss of each square-off (ICAI Guidance Note). `india-fno-plan/plan.py journal`
+prints the year's F&O P&L, charges and that turnover. Intraday equity (a
+same-day buy and sell) is speculative business income: separate again. Not
+tax advice: whether an audit or presumptive taxation applies is for a
+chartered accountant.
+
 ## Steps
 
 1. Refresh prices, then `report --lots`. Show gains by stock, which lots are

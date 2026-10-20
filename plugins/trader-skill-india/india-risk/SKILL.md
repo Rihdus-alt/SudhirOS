@@ -63,6 +63,22 @@ order) and its charges are added.
 | duplicate | the same symbol and side twice in one batch, or already placed today |
 | daily limit | more than `max_orders_per_day` placed today |
 
+F&O orders (exchange NFO or BFO, from /india-fno-plan) get their own checks:
+
+| check | blocks when |
+| --- | --- |
+| switch | `"allow_fno"` is false (the default) |
+| symbol | not an F&O trading symbol (NIFTY26OCT23000CE, NIFTY26O2723000CE, RELIANCE26OCTFUT) |
+| lots | the quantity is not a whole number of lots, is over `fno.max_lots_per_order`, or over the freeze quantity |
+| stop | an entry without a stop-loss (`sl`), or a stop on the wrong side of the entry |
+| risk | the loss at the stop is over `fno.max_risk_per_trade_pct` of `fno.capital` (default 2%) |
+| option selling | selling an option you do not hold (`allow_option_selling` false); exits carry `"closing": true` |
+| expiry | the contract has expired, or it is expiry day and the order opens a position |
+| band | a limit outside the exchange's execution band (from INDmoney's contract quote) |
+| cash | the estimated margin (futures) or premium plus charges (options) would dip into the cash buffer |
+
+Stock F&O within four days of expiry gets a warning: it settles by delivery.
+
 Warnings do not block, but say them: a LIVE account, a stock at its circuit
 (the order may not fill), a 2% or 5% band with a MARKET order, a T2T stock,
 a MARKET order (the fill price is unknown), prices more than 30 hours old, a

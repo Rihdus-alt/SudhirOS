@@ -1,7 +1,7 @@
 {
   "name": "trader-skill-india",
-  "description": "12 Claude skills for Indian stocks: copy a mutual fund or investor from SEBI disclosures, watch NSE/BSE filings and insider trades, size every trade in whole shares with real charges, check SEBI and exchange rules, and never place an order without your yes.",
-  "version": "1.0.0",
+  "description": "16 Claude skills for Indian stocks and F&O: copy a mutual fund or investor from SEBI disclosures, watch NSE/BSE filings and insider trades, screen futures and options with stop-loss, targets and trailing stops backtested on real data, size every trade in whole shares or lots with real charges, check SEBI and exchange rules, and never place an order without your yes.",
+  "version": "1.1.0",
   "author": {
     "name": "SudhirOS"
   },
@@ -18,7 +18,10 @@
     "sebi",
     "mutual-funds",
     "insider-trading",
-    "capital-gains"
+    "capital-gains",
+    "futures-and-options",
+    "option-chain",
+    "backtesting"
   ],
   "skills": "./"
 }

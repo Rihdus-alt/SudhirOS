@@ -48,7 +48,9 @@ import sys
 
 ORDER_FIELDS = ("variety", "exchange", "tradingsymbol", "transaction_type", "quantity", "product",
                 "order_type", "price", "trigger_price", "validity", "disclosed_quantity", "tag")
-PRODUCT_WORDS = {"CNC": "delivery (CNC)", "MIS": "intraday (MIS)", "MTF": "margin trading (MTF)", "NRML": "NRML"}
+PRODUCT_WORDS = {"CNC": "delivery (CNC)", "MIS": "intraday (MIS)", "MTF": "margin trading (MTF)",
+                 "NRML": "carry forward (NRML)"}
+FNO_EXCHANGES = ("NFO", "BFO")
 VALIDITY_WORDS = {"DAY": "valid for today", "IOC": "immediate or cancel"}
 YES_FIRST = ("yes", "y", "haan", "han", "ha")
 BATCH_WORDS = {"all", "every", "everything", "rest", "remaining", "them", "both", "batch", "each",
@@ -129,8 +131,13 @@ def plain(order):
     """BUY 35 HDFCBANK on NSE, delivery (CNC), limit Rs 715.55, valid for today"""
     side = str(order.get("transaction_type", "")).upper()
     q = order.get("quantity")
-    what = "%s share%s of %s on %s" % (q, "" if str(q) == "1" else "s", order.get("tradingsymbol", "?"),
-                                       order.get("exchange", "NSE"))
+    if str(order.get("exchange", "")).upper() in FNO_EXCHANGES:
+        lot = order.get("lot_size")
+        lots = (" (%d lot%s of %s)" % (int(q) // int(lot), "" if int(q) // int(lot) == 1 else "s", lot)) if lot and q else ""
+        what = "%s %s%s on %s" % (q, order.get("tradingsymbol", "?"), lots, order.get("exchange"))
+    else:
+        what = "%s share%s of %s on %s" % (q, "" if str(q) == "1" else "s", order.get("tradingsymbol", "?"),
+                                           order.get("exchange", "NSE"))
     typ = str(order.get("order_type", "MARKET")).upper()
     if typ == "LIMIT":
         how = "limit %s" % inr(order.get("price"))
@@ -141,6 +148,9 @@ def plain(order):
     else:
         how = "market price"
     extra = " (after-market order)" if str(order.get("variety", "regular")).lower() == "amo" else ""
+    if order.get("sl") is not None and not order.get("closing"):
+        extra += "; stop-loss %s, TP1 %s, TP2 %s (on the %s)" % (order["sl"], order.get("tp1"), order.get("tp2"),
+                                                                order.get("levels_on", "price"))
     return "%s %s, %s, %s, %s%s" % (side, what, PRODUCT_WORDS.get(str(order.get("product", "CNC")).upper(),
                                                                    order.get("product")), how,
                                     VALIDITY_WORDS.get(str(order.get("validity", "DAY")).upper(), order.get("validity")),
@@ -284,8 +294,30 @@ def ticket_json(order, idx, cfg, risk, state, today):
 
 # ---------------------------------------------------------------- fills -> lots
 
-def apply_fill(portfolio_path, cfg, symbol, side, qty, price, date, charges=None, stt=None, exchange="NSE"):
+def apply_fno_fill(portfolio_path, cfg, symbol, side, qty, price, date, charges=None, exchange="NFO", lot_size=None):
+    """F&O fills go to trader/fno/journal.json (business income, not capital gains); cash moves in the portfolio."""
+    core = _sibling("india-fno-plan", "fnocore")
+    jpath = os.path.join(os.path.dirname(portfolio_path) or ".", "fno", "journal.json")
+    journal = read_json(jpath, "F&O journal", required=False) or {"positions": {}, "fills": [], "realized": []}
+    journal, realized, cash = core.journal_apply(journal, symbol.upper(), side, qty, price, date, lot_size,
+                                                 rates=costs.rates_from(cfg), exchange=exchange, charges=charges)
+    write_json(jpath, journal)
+    pf = read_json(portfolio_path, "portfolio", required=False)
+    if pf is None:
+        budget = cfg.get("budget")
+        if not budget:
+            raise TicketError("no %s yet and no budget in the config to start it from" % portfolio_path)
+        pf = {"cash": float(budget), "currency": "INR", "positions": []}
+    pf["cash"] = round(float(pf.get("cash", 0)) + cash, 2)
+    return pf, {"gain": realized, "fno": True}
+
+
+def apply_fill(portfolio_path, cfg, symbol, side, qty, price, date, charges=None, stt=None, exchange="NSE",
+               lot_size=None):
     """Record a filled order in trader/portfolio.json and, for a sell, the realized gain for india-tax."""
+    if str(exchange).upper() in FNO_EXCHANGES:
+        return apply_fno_fill(portfolio_path, cfg, symbol, side, qty, price, date, charges, str(exchange).upper(),
+                              lot_size)
     pf = read_json(portfolio_path, "portfolio", required=False)
     if pf is None:
         budget = cfg.get("budget")
@@ -470,7 +502,7 @@ def cmd_paper_fill(a):
             raise TicketError("no last price for %s in %s to fill a market order on paper" % (rec["symbol"], a.prices))
         price = float(ltp)
     pf, sale = apply_fill(a.portfolio, cfg, rec["symbol"], rec["side"], order["quantity"], price, today,
-                          exchange=order.get("exchange", "NSE"))
+                          exchange=order.get("exchange", "NSE"), lot_size=order.get("lot_size"))
     write_json(a.portfolio, pf)
     state["orders"].append({"at": now_iso(), "date": today, "index": a.index, "fingerprint": rec["fingerprint"],
                             "symbol": rec["symbol"], "side": rec["side"], "plain": rec["plain"], "status": "placed",
@@ -478,20 +510,28 @@ def cmd_paper_fill(a):
     write_json(a.state, state)
     print("Paper fill: %s %s %s at %s. Cash now %s." % (rec["side"], order["quantity"], rec["symbol"], inr(price),
                                                         inr(pf["cash"])))
-    if sale:
-        print("Realized %s (logged for india-tax)." % inr(sale["gain"]))
+    if sale and (sale["gain"] or not sale.get("fno")):
+        print("Realized %s (logged for %s)." % (inr(sale["gain"]), "the F&O journal" if sale.get("fno") else "india-tax"))
+    if str(order.get("exchange", "")).upper() in FNO_EXCHANGES and order.get("then") and rec["side"] in ("BUY", "SELL") \
+            and not order.get("closing"):
+        sl = order["then"][0]
+        print("Now protect it: %s %s %s, SL trigger %s, limit %s (india-fno-plan trail moves it later)."
+              % (sl["transaction_type"], sl["quantity"], rec["symbol"], inr(sl["trigger_price"]), inr(sl["price"])))
     return 0
 
 
 def cmd_fill(a):
     cfg = read_json(a.config, "config", required=False) or {}
     date = a.date or datetime.date.today().isoformat()
-    pf, sale = apply_fill(a.portfolio, cfg, a.symbol, a.side, a.qty, a.price, date, a.charges, a.stt, a.exchange)
+    exch = a.exchange.upper()
+    if exch in ("NSE", "BSE") and re.match(r"^[A-Z&\-]+\d{2}[A-Z0-9]{3}[\d.]*(CE|PE|FUT)$", a.symbol.upper()):
+        exch = "NFO" if exch == "NSE" else "BFO"
+    pf, sale = apply_fill(a.portfolio, cfg, a.symbol, a.side, a.qty, a.price, date, a.charges, a.stt, exch)
     write_json(a.portfolio, pf)
     print("Recorded %s %s %s at %s on %s. Cash now %s." % (a.side.upper(), a.qty, a.symbol.upper(), inr(a.price),
                                                           date, inr(pf["cash"])))
-    if sale:
-        print("Realized %s (logged for india-tax)." % inr(sale["gain"]))
+    if sale and (sale["gain"] or not sale.get("fno")):
+        print("Realized %s (logged for %s)." % (inr(sale["gain"]), "the F&O journal" if sale.get("fno") else "india-tax"))
     return 0
 
 
