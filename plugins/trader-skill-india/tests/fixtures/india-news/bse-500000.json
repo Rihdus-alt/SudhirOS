@@ -1,0 +1,26 @@
+{
+ "Table": [
+  {
+   "NEWSID": "a1b2c3d4-0001",
+   "SCRIP_CD": 500000,
+   "XML_NAME": "",
+   "NEWSSUB": "Alpha Pipes Ltd - 500000 - Outcome of Board Meeting",
+   "DT_TM": "2026-10-18T19:06:40.237",
+   "NEWS_DT": "2026-10-18T19:06:40.237",
+   "CATEGORYNAME": "Board Meeting",
+   "HEADLINE": "Outcome of Board Meeting: unaudited financial results for the quarter ended September 30, 2026 and interim dividend.",
+   "ATTACHMENTNAME": "a1b2c3d4-0001.pdf",
+   "SLONGNAME": "Alpha Pipes Ltd"
+  },
+  {
+   "NEWSID": "a1b2c3d4-0002",
+   "SCRIP_CD": 500000,
+   "NEWSSUB": "Alpha Pipes Ltd - 500000 - Credit Rating",
+   "NEWS_DT": "2026-10-16T12:00:00.000",
+   "CATEGORYNAME": "Company Update",
+   "HEADLINE": "Example Ratings has downgraded the long-term rating to A- with a negative outlook.",
+   "ATTACHMENTNAME": "a1b2c3d4-0002.pdf",
+   "SLONGNAME": "Alpha Pipes Ltd"
+  }
+ ]
+}

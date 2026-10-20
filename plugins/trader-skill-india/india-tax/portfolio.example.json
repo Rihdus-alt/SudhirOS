@@ -1,0 +1,89 @@
+{
+  "cash": 6769.14,
+  "currency": "INR",
+  "note": "The reel's paper portfolio (fills at the 2026-10-19 closes, on 2026-10-21) plus two EXAMPLE lots to show grandfathering and a bonus. The AXISBANK 2017 lot and its FMV are illustrative numbers, not a record.",
+  "positions": [
+    {
+      "ticker": "HDFCBANK",
+      "shares": 35,
+      "lots": [
+        {
+          "id": "HDFCBANK-1",
+          "date": "2026-10-21",
+          "shares": 35,
+          "cost": 24924.64,
+          "price": 712,
+          "charges": 29.64,
+          "stt": 25
+        }
+      ]
+    },
+    {
+      "ticker": "ICICIBANK",
+      "shares": 18,
+      "lots": [
+        {
+          "id": "ICICIBANK-1",
+          "date": "2026-10-21",
+          "shares": 18,
+          "cost": 24862.63,
+          "price": 1381,
+          "charges": 29.63,
+          "stt": 25
+        }
+      ]
+    },
+    {
+      "ticker": "M&M",
+      "shares": 6,
+      "lots": [
+        {
+          "id": "M&M-1",
+          "date": "2026-10-21",
+          "shares": 6,
+          "cost": 17445.26,
+          "price": 2907,
+          "charges": 20.26,
+          "stt": 17
+        }
+      ]
+    },
+    {
+      "ticker": "AXISBANK",
+      "shares": 61,
+      "lots": [
+        {
+          "id": "AXISBANK-1",
+          "date": "2017-11-20",
+          "shares": 50,
+          "cost": 26500.0,
+          "fmv_2018_01_31": 625.0
+        },
+        {
+          "id": "AXISBANK-2",
+          "date": "2026-10-21",
+          "shares": 11,
+          "cost": 13598.53,
+          "price": 1236,
+          "charges": 16.53,
+          "stt": 14
+        }
+      ]
+    },
+    {
+      "ticker": "TCS",
+      "shares": 5,
+      "lots": [
+        {
+          "id": "TCS-1",
+          "date": "2026-10-21",
+          "shares": 5,
+          "cost": 12306.8,
+          "price": 2460.9,
+          "charges": 14.3,
+          "stt": 12
+        }
+      ]
+    }
+  ]
+}

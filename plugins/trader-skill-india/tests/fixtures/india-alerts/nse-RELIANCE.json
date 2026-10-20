@@ -1,0 +1,54 @@
+{
+ "info": {
+  "symbol": "RELIANCE",
+  "companyName": "Reliance Industries Limited",
+  "industry": "",
+  "isFNOSec": true,
+  "isin": "INE002A01018",
+  "activeSeries": [
+   "EQ"
+  ]
+ },
+ "metadata": {
+  "series": "EQ",
+  "symbol": "RELIANCE",
+  "isin": "INE002A01018",
+  "status": "Listed",
+  "listingDate": "",
+  "industry": "",
+  "lastUpdateTime": "19-Oct-2026 16:00:00",
+  "pdSectorInd": "NIFTY 50"
+ },
+ "securityInfo": {
+  "boardStatus": "Main",
+  "tradingStatus": "Active",
+  "tradingSegment": "Normal Market",
+  "faceValue": 10,
+  "surveillance": {
+   "surv": null,
+   "desc": null
+  }
+ },
+ "priceInfo": {
+  "lastPrice": 1202.0,
+  "change": -9.2,
+  "pChange": -0.7596,
+  "previousClose": 1211.2,
+  "open": 1211.2,
+  "close": 1202.0,
+  "vwap": 1202.0,
+  "lowerCP": "1090.1",
+  "upperCP": "1332.3",
+  "pPriceBand": "No Band",
+  "basePrice": 1211.2,
+  "intraDayHighLow": {
+   "min": 1201.0,
+   "max": 1228.2,
+   "value": 1202.0
+  },
+  "weekHighLow": {
+   "min": 0,
+   "max": 0
+  }
+ }
+}

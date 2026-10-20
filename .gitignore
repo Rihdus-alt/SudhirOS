@@ -1,0 +1,4 @@
+__pycache__/
+*.pyc
+# your own trading state: configs, portfolios, orders and logs stay on your machine
+trader/

@@ -1,0 +1,24 @@
+{
+  "name": "trader-skill-india",
+  "description": "12 Claude skills for Indian stocks: copy a mutual fund or investor from SEBI disclosures, watch NSE/BSE filings and insider trades, size every trade in whole shares with real charges, check SEBI and exchange rules, and never place an order without your yes.",
+  "version": "1.0.0",
+  "author": {
+    "name": "SudhirOS"
+  },
+  "homepage": "https://github.com/rihdus-alt/SudhirOS/tree/main/plugins/trader-skill-india",
+  "repository": "https://github.com/rihdus-alt/SudhirOS",
+  "license": "MIT",
+  "keywords": [
+    "claude-code",
+    "claude-skills",
+    "investing",
+    "india",
+    "nse",
+    "bse",
+    "sebi",
+    "mutual-funds",
+    "insider-trading",
+    "capital-gains"
+  ],
+  "skills": "./"
+}

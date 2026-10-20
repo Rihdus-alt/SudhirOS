@@ -1,0 +1,49 @@
+{
+ "chart": {
+  "result": [
+   {
+    "meta": {
+     "currency": "INR",
+     "symbol": "M&M.NS",
+     "exchangeName": "NSI",
+     "fullExchangeName": "NSE",
+     "instrumentType": "EQUITY",
+     "regularMarketTime": 1792404000,
+     "gmtoffset": 19800,
+     "timezone": "IST",
+     "exchangeTimezoneName": "Asia/Kolkata",
+     "regularMarketPrice": 2907.0,
+     "regularMarketDayHigh": 2938.6,
+     "regularMarketDayLow": 2885.6,
+     "chartPreviousClose": 2920.9,
+     "previousClose": 2920.9
+    },
+    "timestamp": [
+     1792404000
+    ],
+    "indicators": {
+     "quote": [
+      {
+       "open": [
+        null
+       ],
+       "close": [
+        2907.0
+       ],
+       "high": [
+        2938.6
+       ],
+       "low": [
+        2885.6
+       ],
+       "volume": [
+        0
+       ]
+      }
+     ]
+    }
+   }
+  ],
+  "error": null
+ }
+}

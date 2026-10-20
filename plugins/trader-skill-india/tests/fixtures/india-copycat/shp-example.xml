@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xbrli:xbrl xmlns:xbrli="http://www.xbrl.org/2003/instance" xmlns:in-bse-shp="http://www.bseindia.com/xbrl/shp/2023-06-30/in-bse-shp">
+  <xbrli:context id="OneD"><xbrli:entity><xbrli:identifier scheme="http://www.bseindia.com">500000</xbrli:identifier></xbrli:entity><xbrli:period><xbrli:instant>2026-09-30</xbrli:instant></xbrli:period></xbrli:context>
+  <in-bse-shp:NameOfTheCompany contextRef="OneD">Alpha Pipes Limited</in-bse-shp:NameOfTheCompany>
+  <in-bse-shp:Symbol contextRef="OneD">ALPHAPIPE</in-bse-shp:Symbol>
+  <in-bse-shp:ISIN contextRef="OneD">INE123Z01019</in-bse-shp:ISIN>
+  <in-bse-shp:ShareholdingPatternForThePeriodEnded contextRef="OneD">2026-09-30</in-bse-shp:ShareholdingPatternForThePeriodEnded>
+  <in-bse-shp:NameOfTheShareholder contextRef="PublicIndividualsMoreThanOnePercent01">Example Investor A</in-bse-shp:NameOfTheShareholder>
+  <in-bse-shp:NumberOfFullyPaidUpEquityShares contextRef="PublicIndividualsMoreThanOnePercent01" unitRef="shares" decimals="0">3000000</in-bse-shp:NumberOfFullyPaidUpEquityShares>
+  <in-bse-shp:ShareholdingAsAPercentageOfTotalNumberOfShares contextRef="PublicIndividualsMoreThanOnePercent01" unitRef="pure" decimals="4">0.0222</in-bse-shp:ShareholdingAsAPercentageOfTotalNumberOfShares>
+  <in-bse-shp:NameOfTheShareholder contextRef="PublicMutualFundsMoreThanOnePercent01">Example Mutual Fund - Example Flexi Cap Fund</in-bse-shp:NameOfTheShareholder>
+  <in-bse-shp:NumberOfFullyPaidUpEquityShares contextRef="PublicMutualFundsMoreThanOnePercent01" unitRef="shares" decimals="0">6750000</in-bse-shp:NumberOfFullyPaidUpEquityShares>
+  <in-bse-shp:ShareholdingAsAPercentageOfTotalNumberOfShares contextRef="PublicMutualFundsMoreThanOnePercent01" unitRef="pure" decimals="4">0.05</in-bse-shp:ShareholdingAsAPercentageOfTotalNumberOfShares>
+  <in-bse-shp:NameOfTheShareholder contextRef="PromoterIndividual01">Example Promoter</in-bse-shp:NameOfTheShareholder>
+  <in-bse-shp:NumberOfFullyPaidUpEquityShares contextRef="PromoterIndividual01" unitRef="shares" decimals="0">82000000</in-bse-shp:NumberOfFullyPaidUpEquityShares>
+  <in-bse-shp:ShareholdingAsAPercentageOfTotalNumberOfShares contextRef="PromoterIndividual01" unitRef="pure" decimals="4">0.6074</in-bse-shp:ShareholdingAsAPercentageOfTotalNumberOfShares>
+  <in-bse-shp:NameOfTheShareholder contextRef="PublicIndividualsMoreThanOnePercent02">Small Holder</in-bse-shp:NameOfTheShareholder>
+  <in-bse-shp:NumberOfFullyPaidUpEquityShares contextRef="PublicIndividualsMoreThanOnePercent02" unitRef="shares" decimals="0">1400000</in-bse-shp:NumberOfFullyPaidUpEquityShares>
+  <in-bse-shp:ShareholdingAsAPercentageOfTotalNumberOfShares contextRef="PublicIndividualsMoreThanOnePercent02" unitRef="pure" decimals="4">0.0104</in-bse-shp:ShareholdingAsAPercentageOfTotalNumberOfShares>
+</xbrli:xbrl>

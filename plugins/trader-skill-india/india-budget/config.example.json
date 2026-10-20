@@ -1,0 +1,27 @@
+{
+  "budget": 100000,
+  "cash_buffer_pct": 5,
+  "max_position_pct": 25,
+  "max_order_inr": 50000,
+  "min_order_inr": 500,
+  "max_orders_per_day": 10,
+  "exchange": "NSE",
+  "product": "CNC",
+  "order_type": "LIMIT",
+  "limit_buffer_pct": 0.5,
+  "market_slippage_pct": 0.5,
+  "rebalance_band_pct": 5,
+  "max_cost_pct": 1.0,
+  "broker": "manual",
+  "paper": true,
+  "blocked": [],
+  "allow_fno": false,
+  "allow_intraday": false,
+  "allow_mtf": false,
+  "allow_short": false,
+  "block_surveillance": true,
+  "charges": {
+    "brokerage_delivery": {"flat": 0, "pct": 0, "min": 0},
+    "dp_charge_per_scrip": 15.93
+  }
+}

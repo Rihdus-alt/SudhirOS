@@ -1,0 +1,40 @@
+{
+  "rules": [
+    {
+      "id": "opening-bell",
+      "type": "opening_bell"
+    },
+    {
+      "id": "hdfcbank-stop-680",
+      "symbol": "HDFCBANK",
+      "type": "stop",
+      "price": 680,
+      "note": "below the 52-week low area"
+    },
+    {
+      "id": "icicibank-above-1450",
+      "symbol": "ICICIBANK",
+      "type": "above",
+      "price": 1450
+    },
+    {
+      "id": "axisbank-pct-move-3",
+      "symbol": "AXISBANK",
+      "type": "pct_move",
+      "pct": 3
+    },
+    {
+      "id": "tcs-near-circuit-2",
+      "symbol": "TCS",
+      "type": "near_circuit",
+      "pct": 2
+    },
+    {
+      "id": "mm-dip-2800",
+      "symbol": "M&M",
+      "type": "below",
+      "price": 2800,
+      "rearm": true
+    }
+  ]
+}

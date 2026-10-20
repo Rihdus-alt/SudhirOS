@@ -1,0 +1,54 @@
+{
+ "info": {
+  "symbol": "TCS",
+  "companyName": "Tata Consultancy Services Limited",
+  "industry": "",
+  "isFNOSec": true,
+  "isin": "INE467B01029",
+  "activeSeries": [
+   "EQ"
+  ]
+ },
+ "metadata": {
+  "series": "EQ",
+  "symbol": "TCS",
+  "isin": "INE467B01029",
+  "status": "Listed",
+  "listingDate": "",
+  "industry": "",
+  "lastUpdateTime": "19-Oct-2026 16:00:00",
+  "pdSectorInd": "NIFTY 50"
+ },
+ "securityInfo": {
+  "boardStatus": "Main",
+  "tradingStatus": "Active",
+  "tradingSegment": "Normal Market",
+  "faceValue": 10,
+  "surveillance": {
+   "surv": null,
+   "desc": null
+  }
+ },
+ "priceInfo": {
+  "lastPrice": 2490.0,
+  "change": 25.0,
+  "pChange": 1.0142,
+  "previousClose": 2465.0,
+  "open": 2465.0,
+  "close": 2490.0,
+  "vwap": 2490.0,
+  "lowerCP": "2218.5",
+  "upperCP": "2711.5",
+  "pPriceBand": "No Band",
+  "basePrice": 2465.0,
+  "intraDayHighLow": {
+   "min": 2432.1,
+   "max": 2497.0,
+   "value": 2490.0
+  },
+  "weekHighLow": {
+   "min": 0,
+   "max": 0
+  }
+ }
+}

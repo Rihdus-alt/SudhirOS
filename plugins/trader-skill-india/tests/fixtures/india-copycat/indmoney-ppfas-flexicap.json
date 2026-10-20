@@ -1,0 +1,208 @@
+{
+  "success": true,
+  "data": [
+    {
+      "fund_id": 3229,
+      "data": {
+        "fund_detail": {
+          "aum": 145070,
+          "benchmark_name": "Nifty 500 TR INR",
+          "category": "flexi cap",
+          "expense_ratio": 0.69,
+          "fund_app_short_name": "Parag Parikh Flexi Cap Fund",
+          "name": "Parag Parikh Flexi Cap Fund",
+          "nav": 90.3546
+        },
+        "holdings": {
+          "display_name": "Top Holdings",
+          "holdings_count": [
+            {
+              "name": "Total Holdings",
+              "count": 40
+            },
+            {
+              "name": "Equity Holdings",
+              "count": 20,
+              "perc": 90.22959
+            },
+            {
+              "name": "Debt Holdings",
+              "count": 20,
+              "perc": 0.21152
+            }
+          ],
+          "holdings": [
+            {
+              "name": "Equity",
+              "holds": [
+                {
+                  "name": "UltraTech Cement Ltd",
+                  "perc": "0.1%",
+                  "sector": "Basic Materials",
+                  "current_number_of_shares": 79200,
+                  "share_change_percentage": "-29.4%"
+                },
+                {
+                  "name": "Indraprastha Gas Ltd",
+                  "perc": "1.2%",
+                  "sector": "Utilities",
+                  "current_number_of_shares": 121286630,
+                  "share_change_percentage": "5.4%"
+                },
+                {
+                  "name": "Tata Consumer Products Ltd",
+                  "perc": "0%",
+                  "sector": "Consumer Defensive",
+                  "current_number_of_shares": 15400,
+                  "share_change_percentage": "-61.6%"
+                },
+                {
+                  "name": "Mahanagar Gas Ltd",
+                  "perc": "0.3%",
+                  "sector": "Utilities",
+                  "current_number_of_shares": 3965479,
+                  "share_change_percentage": "15.3%"
+                },
+                {
+                  "name": "Cipla Ltd",
+                  "perc": "1.3%",
+                  "sector": "Healthcare",
+                  "current_number_of_shares": 14351629,
+                  "share_change_percentage": "0%"
+                },
+                {
+                  "name": "Zydus Lifesciences Ltd",
+                  "perc": "1.5%",
+                  "sector": "Healthcare",
+                  "current_number_of_shares": 19262784,
+                  "share_change_percentage": "0%"
+                },
+                {
+                  "name": "Grasim Industries Ltd",
+                  "perc": "0%",
+                  "sector": "Basic Materials",
+                  "current_number_of_shares": 78500,
+                  "share_change_percentage": "-51.8%"
+                },
+                {
+                  "name": "E I D Parry India Ltd",
+                  "perc": "0.5%",
+                  "sector": "Basic Materials",
+                  "current_number_of_shares": 10908198,
+                  "share_change_percentage": "3.5%"
+                },
+                {
+                  "name": "Indian Energy Exchange Ltd",
+                  "perc": "0.6%",
+                  "sector": "Financial Services",
+                  "current_number_of_shares": 84096110,
+                  "share_change_percentage": "0%"
+                },
+                {
+                  "name": "ICICI Bank Ltd",
+                  "perc": "5.2%",
+                  "sector": "Financial Services",
+                  "current_number_of_shares": 57517280,
+                  "share_change_percentage": "0%"
+                },
+                {
+                  "name": "Bajaj Finserv Ltd",
+                  "perc": "0%",
+                  "sector": "Financial Services",
+                  "current_number_of_shares": 94200,
+                  "share_change_percentage": "-47.2%"
+                },
+                {
+                  "name": "JSW Steel Ltd",
+                  "perc": "0%",
+                  "sector": "Basic Materials",
+                  "current_number_of_shares": 120150,
+                  "share_change_percentage": "0%"
+                },
+                {
+                  "name": "Indus Towers Ltd Ordinary Shares",
+                  "perc": "0.2%",
+                  "sector": "Communication Services",
+                  "current_number_of_shares": 7145503,
+                  "share_change_percentage": "725.3%"
+                },
+                {
+                  "name": "IndusInd Bank Ltd",
+                  "perc": "0%",
+                  "sector": "Financial Services",
+                  "current_number_of_shares": 492100,
+                  "share_change_percentage": "0%"
+                },
+                {
+                  "name": "TVS Motor Co Ltd",
+                  "perc": "0%",
+                  "sector": "Consumer Cyclical",
+                  "current_number_of_shares": 96950,
+                  "share_change_percentage": "0%"
+                },
+                {
+                  "name": "Tata Consultancy Services Ltd",
+                  "perc": "2.5%",
+                  "sector": "Technology",
+                  "current_number_of_shares": 17700807,
+                  "share_change_percentage": "0%"
+                },
+                {
+                  "name": "Amazon.com Inc",
+                  "perc": "2.3%",
+                  "sector": "Consumer Cyclical",
+                  "current_number_of_shares": 1394858,
+                  "share_change_percentage": "0.3%"
+                },
+                {
+                  "name": "Axis Bank Ltd",
+                  "perc": "2.8%",
+                  "sector": "Financial Services",
+                  "current_number_of_shares": 33672018,
+                  "share_change_percentage": "0%"
+                },
+                {
+                  "name": "HDFC Bank Ltd",
+                  "perc": "7.8%",
+                  "sector": "Financial Services",
+                  "current_number_of_shares": 158729224,
+                  "share_change_percentage": "0%"
+                },
+                {
+                  "name": "Mahindra & Mahindra Ltd",
+                  "perc": "3.9%",
+                  "sector": "Consumer Cyclical",
+                  "current_number_of_shares": 19122225,
+                  "share_change_percentage": "7.2%"
+                }
+              ]
+            },
+            {
+              "name": "Debt & Cash",
+              "holds": [
+                {
+                  "name": "Small Industries Development Bank of India",
+                  "perc": "0.1%",
+                  "current_number_of_shares": 4000,
+                  "share_change_percentage": "0%"
+                },
+                {
+                  "name": "Canara Bank",
+                  "perc": "0.3%",
+                  "current_number_of_shares": 9000,
+                  "share_change_percentage": "0%"
+                },
+                {
+                  "name": "Tbill",
+                  "perc": "0.1%",
+                  "current_number_of_shares": 20500000,
+                  "share_change_percentage": "0%"
+                }
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

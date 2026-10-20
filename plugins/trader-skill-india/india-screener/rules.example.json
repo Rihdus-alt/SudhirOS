@@ -1,0 +1,18 @@
+{
+  "name": "Quality compounders at a fair price",
+  "rules": [
+    {"metric": "roce", "op": ">=", "value": 15},
+    {"metric": "sales_growth_3y", "op": ">=", "value": 10},
+    {"metric": "debt_to_equity", "op": "<=", "value": 0.5},
+    {"metric": "promoter_holding", "op": ">=", "value": 40},
+    {"metric": "pledged_pct", "op": "<=", "value": 5},
+    {"metric": "pe", "op": "<=", "value": 40}
+  ],
+  "rank": [
+    {"metric": "roce", "order": "desc", "weight": 2},
+    {"metric": "sales_growth_3y", "order": "desc", "weight": 1},
+    {"metric": "pe", "order": "asc", "weight": 1}
+  ],
+  "missing": "fail",
+  "top": 10
+}

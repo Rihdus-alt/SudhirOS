@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xbrli:xbrl xmlns:xbrli="http://www.xbrl.org/2003/instance" xmlns:xbrldi="http://xbrl.org/2006/xbrldi" xmlns:in-bse-fin="http://www.bseindia.com/xbrl/fin/2020-03-31/in-bse-fin">
+<xbrli:context id="OneD"><xbrli:entity><xbrli:identifier scheme="http://www.nseindia.com">ALPHAPIPE</xbrli:identifier></xbrli:entity><xbrli:period><xbrli:startDate>2026-07-01</xbrli:startDate><xbrli:endDate>2026-09-30</xbrli:endDate></xbrli:period></xbrli:context>
+<xbrli:context id="TwoD"><xbrli:entity><xbrli:identifier scheme="http://www.nseindia.com">ALPHAPIPE</xbrli:identifier></xbrli:entity><xbrli:period><xbrli:startDate>2026-04-01</xbrli:startDate><xbrli:endDate>2026-06-30</xbrli:endDate></xbrli:period></xbrli:context>
+<xbrli:context id="ThreeD"><xbrli:entity><xbrli:identifier scheme="http://www.nseindia.com">ALPHAPIPE</xbrli:identifier></xbrli:entity><xbrli:period><xbrli:startDate>2025-07-01</xbrli:startDate><xbrli:endDate>2025-09-30</xbrli:endDate></xbrli:period></xbrli:context>
+<xbrli:context id="FourD"><xbrli:entity><xbrli:identifier scheme="http://www.nseindia.com">ALPHAPIPE</xbrli:identifier></xbrli:entity><xbrli:period><xbrli:startDate>2026-04-01</xbrli:startDate><xbrli:endDate>2026-09-30</xbrli:endDate></xbrli:period></xbrli:context>
+<xbrli:context id="OneDSeg"><xbrli:entity><xbrli:identifier scheme="http://www.nseindia.com">ALPHAPIPE</xbrli:identifier><xbrli:segment><xbrldi:explicitMember dimension="in-bse-fin:SegmentsAxis">in-bse-fin:PipesMember</xbrldi:explicitMember></xbrli:segment></xbrli:entity><xbrli:period><xbrli:startDate>2026-07-01</xbrli:startDate><xbrli:endDate>2026-09-30</xbrli:endDate></xbrli:period></xbrli:context>
+<in-bse-fin:Symbol contextRef="OneD">ALPHAPIPE</in-bse-fin:Symbol>
+<in-bse-fin:NameOfTheCompany contextRef="OneD">Alpha Pipes Limited</in-bse-fin:NameOfTheCompany>
+<in-bse-fin:ISIN contextRef="OneD">INE123Z01019</in-bse-fin:ISIN>
+<in-bse-fin:NatureOfReportStandaloneConsolidated contextRef="OneD">Consolidated</in-bse-fin:NatureOfReportStandaloneConsolidated>
+<in-bse-fin:WhetherResultsAreAuditedOrUnaudited contextRef="OneD">Unaudited</in-bse-fin:WhetherResultsAreAuditedOrUnaudited>
+<in-bse-fin:DateOfEndOfReportingPeriod contextRef="OneD">2026-09-30</in-bse-fin:DateOfEndOfReportingPeriod>
+<in-bse-fin:LevelOfRoundingUsedInFinancialStatements contextRef="OneD">Crores</in-bse-fin:LevelOfRoundingUsedInFinancialStatements>
+<in-bse-fin:RevenueFromOperations contextRef="OneD" unitRef="INR" decimals="-5">12000000000</in-bse-fin:RevenueFromOperations>
+<in-bse-fin:OtherIncome contextRef="OneD" unitRef="INR" decimals="-5">300000000</in-bse-fin:OtherIncome>
+<in-bse-fin:Income contextRef="OneD" unitRef="INR" decimals="-5">12300000000</in-bse-fin:Income>
+<in-bse-fin:FinanceCosts contextRef="OneD" unitRef="INR" decimals="-5">150000000</in-bse-fin:FinanceCosts>
+<in-bse-fin:DepreciationDepletionAndAmortisationExpense contextRef="OneD" unitRef="INR" decimals="-5">400000000</in-bse-fin:DepreciationDepletionAndAmortisationExpense>
+<in-bse-fin:ProfitBeforeTax contextRef="OneD" unitRef="INR" decimals="-5">2050000000</in-bse-fin:ProfitBeforeTax>
+<in-bse-fin:TaxExpense contextRef="OneD" unitRef="INR" decimals="-5">520000000</in-bse-fin:TaxExpense>
+<in-bse-fin:ProfitLossForPeriod contextRef="OneD" unitRef="INR" decimals="-5">1530000000</in-bse-fin:ProfitLossForPeriod>
+<in-bse-fin:ProfitOrLossAttributableToOwnersOfParent contextRef="OneD" unitRef="INR" decimals="-5">1500000000</in-bse-fin:ProfitOrLossAttributableToOwnersOfParent>
+<in-bse-fin:BasicEarningsLossPerShareFromContinuingAndDiscontinuedOperations contextRef="OneD" unitRef="INRPerShare" decimals="-5">6.0</in-bse-fin:BasicEarningsLossPerShareFromContinuingAndDiscontinuedOperations>
+<in-bse-fin:DilutedEarningsLossPerShareFromContinuingAndDiscontinuedOperations contextRef="OneD" unitRef="INRPerShare" decimals="-5">6.0</in-bse-fin:DilutedEarningsLossPerShareFromContinuingAndDiscontinuedOperations>
+<in-bse-fin:RevenueFromOperations contextRef="TwoD" unitRef="INR" decimals="-5">11000000000</in-bse-fin:RevenueFromOperations>
+<in-bse-fin:OtherIncome contextRef="TwoD" unitRef="INR" decimals="-5">250000000</in-bse-fin:OtherIncome>
+<in-bse-fin:Income contextRef="TwoD" unitRef="INR" decimals="-5">11250000000</in-bse-fin:Income>
+<in-bse-fin:FinanceCosts contextRef="TwoD" unitRef="INR" decimals="-5">150000000</in-bse-fin:FinanceCosts>
+<in-bse-fin:DepreciationDepletionAndAmortisationExpense contextRef="TwoD" unitRef="INR" decimals="-5">380000000</in-bse-fin:DepreciationDepletionAndAmortisationExpense>
+<in-bse-fin:ProfitBeforeTax contextRef="TwoD" unitRef="INR" decimals="-5">1800000000</in-bse-fin:ProfitBeforeTax>
+<in-bse-fin:TaxExpense contextRef="TwoD" unitRef="INR" decimals="-5">450000000</in-bse-fin:TaxExpense>
+<in-bse-fin:ProfitLossForPeriod contextRef="TwoD" unitRef="INR" decimals="-5">1350000000</in-bse-fin:ProfitLossForPeriod>
+<in-bse-fin:ProfitOrLossAttributableToOwnersOfParent contextRef="TwoD" unitRef="INR" decimals="-5">1320000000</in-bse-fin:ProfitOrLossAttributableToOwnersOfParent>
+<in-bse-fin:BasicEarningsLossPerShareFromContinuingAndDiscontinuedOperations contextRef="TwoD" unitRef="INRPerShare" decimals="-5">5.28</in-bse-fin:BasicEarningsLossPerShareFromContinuingAndDiscontinuedOperations>
+<in-bse-fin:DilutedEarningsLossPerShareFromContinuingAndDiscontinuedOperations contextRef="TwoD" unitRef="INRPerShare" decimals="-5">5.28</in-bse-fin:DilutedEarningsLossPerShareFromContinuingAndDiscontinuedOperations>
+<in-bse-fin:RevenueFromOperations contextRef="ThreeD" unitRef="INR" decimals="-5">10000000000</in-bse-fin:RevenueFromOperations>
+<in-bse-fin:OtherIncome contextRef="ThreeD" unitRef="INR" decimals="-5">200000000</in-bse-fin:OtherIncome>
+<in-bse-fin:Income contextRef="ThreeD" unitRef="INR" decimals="-5">10200000000</in-bse-fin:Income>
+<in-bse-fin:FinanceCosts contextRef="ThreeD" unitRef="INR" decimals="-5">160000000</in-bse-fin:FinanceCosts>
+<in-bse-fin:DepreciationDepletionAndAmortisationExpense contextRef="ThreeD" unitRef="INR" decimals="-5">350000000</in-bse-fin:DepreciationDepletionAndAmortisationExpense>
+<in-bse-fin:ProfitBeforeTax contextRef="ThreeD" unitRef="INR" decimals="-5">1600000000</in-bse-fin:ProfitBeforeTax>
+<in-bse-fin:TaxExpense contextRef="ThreeD" unitRef="INR" decimals="-5">400000000</in-bse-fin:TaxExpense>
+<in-bse-fin:ProfitLossForPeriod contextRef="ThreeD" unitRef="INR" decimals="-5">1200000000</in-bse-fin:ProfitLossForPeriod>
+<in-bse-fin:ProfitOrLossAttributableToOwnersOfParent contextRef="ThreeD" unitRef="INR" decimals="-5">1180000000</in-bse-fin:ProfitOrLossAttributableToOwnersOfParent>
+<in-bse-fin:BasicEarningsLossPerShareFromContinuingAndDiscontinuedOperations contextRef="ThreeD" unitRef="INRPerShare" decimals="-5">4.72</in-bse-fin:BasicEarningsLossPerShareFromContinuingAndDiscontinuedOperations>
+<in-bse-fin:DilutedEarningsLossPerShareFromContinuingAndDiscontinuedOperations contextRef="ThreeD" unitRef="INRPerShare" decimals="-5">4.72</in-bse-fin:DilutedEarningsLossPerShareFromContinuingAndDiscontinuedOperations>
+<in-bse-fin:RevenueFromOperations contextRef="FourD" unitRef="INR" decimals="-5">23000000000</in-bse-fin:RevenueFromOperations>
+<in-bse-fin:OtherIncome contextRef="FourD" unitRef="INR" decimals="-5">550000000</in-bse-fin:OtherIncome>
+<in-bse-fin:Income contextRef="FourD" unitRef="INR" decimals="-5">23550000000</in-bse-fin:Income>
+<in-bse-fin:FinanceCosts contextRef="FourD" unitRef="INR" decimals="-5">300000000</in-bse-fin:FinanceCosts>
+<in-bse-fin:DepreciationDepletionAndAmortisationExpense contextRef="FourD" unitRef="INR" decimals="-5">780000000</in-bse-fin:DepreciationDepletionAndAmortisationExpense>
+<in-bse-fin:ProfitBeforeTax contextRef="FourD" unitRef="INR" decimals="-5">3850000000</in-bse-fin:ProfitBeforeTax>
+<in-bse-fin:TaxExpense contextRef="FourD" unitRef="INR" decimals="-5">970000000</in-bse-fin:TaxExpense>
+<in-bse-fin:ProfitLossForPeriod contextRef="FourD" unitRef="INR" decimals="-5">2880000000</in-bse-fin:ProfitLossForPeriod>
+<in-bse-fin:ProfitOrLossAttributableToOwnersOfParent contextRef="FourD" unitRef="INR" decimals="-5">2820000000</in-bse-fin:ProfitOrLossAttributableToOwnersOfParent>
+<in-bse-fin:BasicEarningsLossPerShareFromContinuingAndDiscontinuedOperations contextRef="FourD" unitRef="INRPerShare" decimals="-5">11.28</in-bse-fin:BasicEarningsLossPerShareFromContinuingAndDiscontinuedOperations>
+<in-bse-fin:DilutedEarningsLossPerShareFromContinuingAndDiscontinuedOperations contextRef="FourD" unitRef="INRPerShare" decimals="-5">11.28</in-bse-fin:DilutedEarningsLossPerShareFromContinuingAndDiscontinuedOperations>
+<in-bse-fin:RevenueFromOperations contextRef="OneDSeg" unitRef="INR" decimals="-5">9000000000</in-bse-fin:RevenueFromOperations>
+</xbrli:xbrl>
