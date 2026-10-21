@@ -241,8 +241,30 @@ class Backtest(unittest.TestCase):
             allt += f.backtest(c, cost_points=cp)
         st = f.stats(allt)
         self.assertEqual(st["trades"], 49)
-        self.assertAlmostEqual(st["expectancy_r"], -0.113, places=2)
+        self.assertAlmostEqual(st["expectancy_r"], -0.055, places=2)
+        self.assertAlmostEqual(st["max_drawdown_r"], -8.24, delta=0.01)
         self.assertLess(st["win_rate"], st["breakeven_win_rate"])
+
+    def test_r_is_planned_risk_and_tp1_books_its_real_price(self):
+        c = f.load_candles(NIFTY)
+        close = {b["date"]: b["close"] for b in c}
+        trades = [t for t in f.backtest(c) if not t["open_at_end"]]
+        checked = 0
+        for t in trades:
+            sgn = 1 if t["direction"] == "long" else -1
+            risk = abs(close[t["signal_date"]] - t["stop"])
+            if any(e.startswith("TP1") for e in t["events"]):
+                want = 0.5 * sgn * (t["tp1"] - t["entry"]) / risk + 0.5 * sgn * (t["exit"] - t["entry"]) / risk
+                checked += 1
+            else:
+                want = sgn * (t["exit"] - t["entry"]) / risk
+            self.assertAlmostEqual(t["r"], want, delta=0.002, msg=t["entry_date"])
+        self.assertGreater(checked, 0)
+
+    def test_drawdown_does_not_depend_on_file_order(self):
+        a = f.backtest(f.load_candles(NIFTY))
+        b = f.backtest(f.load_candles(REL))
+        self.assertEqual(f.stats(a + b)["max_drawdown_r"], f.stats(b + a)["max_drawdown_r"])
 
     def test_cli_split(self):
         code, out, _ = run(bt, [NIFTY, REL, HDFC, "--lots", "RELIANCE=500", "HDFCBANK=550", "--split", "0.3",

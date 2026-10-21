@@ -48,12 +48,12 @@ python3 "${CLAUDE_SKILL_DIR}/backtest.py" trader/fno/NIFTY-1d.json --setups tren
 ## Example (real data: NIFTY, RELIANCE, HDFC Bank, 2025-10-21 to 2026-10-19)
 
 ```
-NIFTY      15 trades  win 33% (95% CI 15-58%, needs 55%)  expectancy -0.41R (t -1.37)
-RELIANCE   19 trades  win 47% (95% CI 27-68%, needs 58%)  expectancy -0.16R (t -0.81)
-HDFCBANK   15 trades  win 67% (95% CI 42-85%, needs 51%)  expectancy +0.25R (t 0.92)
-trend_pullback  27 trades  expectancy +0.09R (t 0.55)    breakout  13 trades  expectancy -0.64R (t -1.87)
-POOLED     49 trades  win 49% (95% CI 36-62%, needs 56%)  expectancy -0.11R  -> no edge after costs
---split 0.3: trend_pullback in-sample +0.42R (t 2.5) but out-of-sample -0.45R
+NIFTY      15 trades  win 33% (95% CI 15-58%, needs 45%)  expectancy -0.17R (t -0.76)
+RELIANCE   19 trades  win 47% (95% CI 27-68%, needs 57%)  expectancy -0.15R (t -0.73)
+HDFCBANK   15 trades  win 67% (95% CI 42-85%, needs 55%)  expectancy +0.18R (t 0.72)
+trend_pullback  27 trades  expectancy +0.09R (t 0.58)    breakout  13 trades  expectancy -0.43R (t -1.64)
+POOLED     49 trades  win 49% (95% CI 36-62%, needs 53%)  expectancy -0.06R  -> no edge after costs
+--split 0.3: trend_pullback in-sample +0.39R (t 2.38) but out-of-sample -0.39R
 ```
 
 That last line is the lesson: a rule that looks significant on the data it

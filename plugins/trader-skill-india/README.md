@@ -113,8 +113,8 @@ everything that can be: the maths, the costs, the rules, and the measurement.
 - **The measurement.** Every signal shows its own backtest on that
   underlying. On a real year of NIFTY, RELIANCE and HDFC Bank daily bars, the
   four setups pooled to 49 trades, 49% wins (95% interval 36-62%) against a
-  56% break-even: -0.11R a trade after costs, no edge. Trend pullbacks looked
-  significant in the first 70% of the data (+0.42R, t 2.5) and lost -0.45R in
+  53% break-even: -0.06R a trade after costs, no edge. Trend pullbacks looked
+  significant in the first 70% of the data (+0.39R, t 2.4) and lost -0.39R in
   the held-out 30%. The pack says this to you instead of hiding it.
 - **The rules.** Whole lots (NIFTY 65, BANKNIFTY 30 from the 2025 revision;
   the chain's lot size wins), STT 0.05%/0.15% from April 2026, the exchange's

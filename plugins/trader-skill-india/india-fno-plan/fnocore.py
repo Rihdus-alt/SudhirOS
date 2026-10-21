@@ -716,7 +716,10 @@ def backtest(c, cfg=None, enabled=SETUPS, cost_points=0.0, start=60, end=None):
             continue
         pos = {"direction": s["direction"], "entry": entry, "stop": lv["stop"], "tp1": lv["tp1"], "tp2": lv["tp2"],
                "best": entry, "stage": "open", "bars_held": 0}
-        risk = abs(entry - lv["stop"])
+        # R is the planned risk (bar i's close to the stop): the size was set on it, so a fill that lands
+        # nearer the stop or nearer TP1 shows up as a smaller or larger result, not as a different R
+        risk = lv["risk_points"]
+        sgn = 1 if long_ else -1
         booked, frac_left, j = 0.0, 1.0, i + 1
         events = []
         while j <= end and not pos.get("closed"):
@@ -724,12 +727,11 @@ def backtest(c, cfg=None, enabled=SETUPS, cost_points=0.0, start=60, end=None):
             pos, ev = trail(pos, [c[j]], ind["atr"][j - 1] or lv["atr"], k)
             events += ev
             if before == "open" and pos["stage"] in ("tp1", "tp2") and not pos.get("closed"):
-                booked += k["tp1_exit_fraction"] * k["tp1_r"]
+                booked += k["tp1_exit_fraction"] * sgn * (pos["tp1"] - entry) / risk
                 frac_left -= k["tp1_exit_fraction"]
             j += 1
         if not pos.get("closed"):
             pos.update(closed=True, exit=c[end]["close"], exit_date=c[end]["date"], open_at_end=True)
-        sgn = 1 if long_ else -1
         r_rest = sgn * (pos["exit"] - entry) / risk
         r_total = booked + frac_left * r_rest - cost_points / risk
         trades.append({"setup": s["setup"], "direction": s["direction"], "signal_date": c[i]["date"],
@@ -744,8 +746,10 @@ def backtest(c, cfg=None, enabled=SETUPS, cost_points=0.0, start=60, end=None):
 
 
 def stats(trades):
-    """Closed trades only: a trade still open at the end of the data is not a result."""
-    trades = [t for t in trades if not t.get("open_at_end")]
+    """Closed trades only: a trade still open at the end of the data is not a result. The drawdown is taken
+    in exit-date order, so pooling several underlyings does not depend on the order of the files."""
+    trades = sorted((t for t in trades if not t.get("open_at_end")),
+                    key=lambda t: (t.get("exit_date") or "", t.get("entry_date") or ""))
     n = len(trades)
     if not n:
         return {"trades": 0}
