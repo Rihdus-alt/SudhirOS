@@ -1,0 +1,54 @@
+{
+ "info": {
+  "symbol": "XYZSMALL",
+  "companyName": "XYZ Small Industries Limited",
+  "industry": "",
+  "isFNOSec": true,
+  "isin": "INE000X01011",
+  "activeSeries": [
+   "BE"
+  ]
+ },
+ "metadata": {
+  "series": "BE",
+  "symbol": "XYZSMALL",
+  "isin": "INE000X01011",
+  "status": "Listed",
+  "listingDate": "",
+  "industry": "",
+  "lastUpdateTime": "19-Oct-2026 16:00:00",
+  "pdSectorInd": "NIFTY 50"
+ },
+ "securityInfo": {
+  "boardStatus": "Main",
+  "tradingStatus": "Active",
+  "tradingSegment": "Normal Market",
+  "faceValue": 10,
+  "surveillance": {
+   "surv": "ASM-LT Stage 1",
+   "desc": null
+  }
+ },
+ "priceInfo": {
+  "lastPrice": 48.25,
+  "change": -2.5,
+  "pChange": -4.9261,
+  "previousClose": 50.75,
+  "open": 50.75,
+  "close": 48.25,
+  "vwap": 48.25,
+  "lowerCP": "48.25",
+  "upperCP": "53.25",
+  "pPriceBand": "5",
+  "basePrice": 50.75,
+  "intraDayHighLow": {
+   "min": 48.25,
+   "max": 50.75,
+   "value": 48.25
+  },
+  "weekHighLow": {
+   "min": 0,
+   "max": 0
+  }
+ }
+}

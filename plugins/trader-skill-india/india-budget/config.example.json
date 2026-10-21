@@ -1,0 +1,53 @@
+{
+  "budget": 100000,
+  "cash_buffer_pct": 5,
+  "max_position_pct": 25,
+  "max_order_inr": 50000,
+  "min_order_inr": 500,
+  "max_orders_per_day": 10,
+  "exchange": "NSE",
+  "product": "CNC",
+  "order_type": "LIMIT",
+  "limit_buffer_pct": 0.5,
+  "market_slippage_pct": 0.5,
+  "rebalance_band_pct": 5,
+  "max_cost_pct": 1.0,
+  "broker": "manual",
+  "paper": true,
+  "blocked": [],
+  "allow_fno": false,
+  "allow_intraday": false,
+  "allow_mtf": false,
+  "allow_short": false,
+  "block_surveillance": true,
+  "charges": {
+    "brokerage_delivery": {
+      "flat": 0,
+      "pct": 0,
+      "min": 0
+    },
+    "dp_charge_per_scrip": 15.93
+  },
+  "fno": {
+    "capital": 500000,
+    "risk_per_trade_pct": 1.0,
+    "max_risk_per_trade_pct": 2.0,
+    "max_lots_per_order": 5,
+    "allow_option_selling": false,
+    "allow_expiry_day_entries": false,
+    "futures_margin_pct": {
+      "index": 12.0,
+      "stock": 20.0
+    },
+    "sl_atr_mult": 1.5,
+    "tp1_r": 1.0,
+    "tp2_r": 2.0,
+    "min_reward_r": 1.5,
+    "trail_atr_mult": 2.5,
+    "trail_after_tp2_atr_mult": 1.5,
+    "time_stop_bars": 8,
+    "option_target_delta": 0.55,
+    "option_min_dte": 3,
+    "option_max_spread_pct": 2.0
+  }
+}

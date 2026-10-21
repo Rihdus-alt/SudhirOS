@@ -1,0 +1,40 @@
+{
+ "data": [
+  {
+   "symbol": "ALPHAPIPE",
+   "companyName": "Alpha Pipes Limited",
+   "audited": "Un-Audited",
+   "cumulative": "Non-cumulative",
+   "consolidated": "Consolidated",
+   "period": "Quarterly",
+   "fromDate": "01-Jul-2026",
+   "toDate": "30-Sep-2026",
+   "filingDate": "18-Oct-2026 19:05",
+   "xbrl": "https://nsearchives.nseindia.com/corporate/xbrl/ALPHAPIPE-2026-09-30.xml"
+  },
+  {
+   "symbol": "ALPHAPIPE",
+   "companyName": "Alpha Pipes Limited",
+   "audited": "Un-Audited",
+   "cumulative": "Non-cumulative",
+   "consolidated": "Non-Consolidated",
+   "period": "Quarterly",
+   "fromDate": "01-Jul-2026",
+   "toDate": "30-Sep-2026",
+   "filingDate": "18-Oct-2026 19:05",
+   "xbrl": "https://nsearchives.nseindia.com/corporate/xbrl/ALPHAPIPE-2026-09-30-standalone.xml"
+  },
+  {
+   "symbol": "ALPHAPIPE",
+   "companyName": "Alpha Pipes Limited",
+   "audited": "Audited",
+   "cumulative": "Non-cumulative",
+   "consolidated": "Consolidated",
+   "period": "Quarterly",
+   "fromDate": "01-Jan-2026",
+   "toDate": "31-Mar-2026",
+   "filingDate": "12-May-2026 18:00",
+   "xbrl": "https://nsearchives.nseindia.com/corporate/xbrl/ALPHAPIPE-2026-03-31.xml"
+  }
+ ]
+}

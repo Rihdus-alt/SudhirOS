@@ -1,0 +1,7 @@
+{
+  "names": [
+    "Example Investor A",
+    "Example Mutual Fund"
+  ],
+  "note": "Client names to watch in bulk and block deals. Every word must appear in the client name the exchange prints."
+}

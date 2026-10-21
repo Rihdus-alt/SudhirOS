@@ -1,0 +1,27 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "sudhiros",
+  "description": "SudhirOS plugins for Claude Code",
+  "owner": {
+    "name": "SudhirOS"
+  },
+  "plugins": [
+    {
+      "name": "trader-skill-india",
+      "description": "Sixteen skills for Indian stocks and F&O (NSE/BSE): copy a mutual fund or investor from SEBI disclosures; filings, insider trades and bulk deals; quarterly results; a screener; F&O trade screening with stop-loss, TP1/TP2 and trailing stops, Black-76 option levels, option-chain analytics and an honest backtester; whole-share and whole-lot sizing with STT and charges; SEBI and exchange risk checks; capital gains and F&O tax; NSE alerts; rebalancing; order tickets that need your yes.",
+      "source": "./plugins/trader-skill-india",
+      "category": "productivity",
+      "homepage": "https://github.com/rihdus-alt/SudhirOS/tree/main/plugins/trader-skill-india"
+    },
+    {
+      "name": "trader-skill",
+      "description": "The original US Trader skill pack by Jake Schincariol: 13F copycat, news, budget, Congress trades, SEC earnings, screener, risk, broker, tax, alerts and rebalancing.",
+      "source": {
+        "source": "github",
+        "repo": "Jakeschincariol/trader-skill"
+      },
+      "category": "productivity",
+      "homepage": "https://github.com/Jakeschincariol/trader-skill"
+    }
+  ]
+}

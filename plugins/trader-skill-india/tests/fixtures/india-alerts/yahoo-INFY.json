@@ -1,0 +1,49 @@
+{
+ "chart": {
+  "result": [
+   {
+    "meta": {
+     "currency": "INR",
+     "symbol": "INFY.NS",
+     "exchangeName": "NSI",
+     "fullExchangeName": "NSE",
+     "instrumentType": "EQUITY",
+     "regularMarketTime": 1791540000,
+     "gmtoffset": 19800,
+     "timezone": "IST",
+     "exchangeTimezoneName": "Asia/Kolkata",
+     "regularMarketPrice": 1180.0,
+     "regularMarketDayHigh": 1190.0,
+     "regularMarketDayLow": 1170.0,
+     "chartPreviousClose": 1175.0,
+     "previousClose": 1175.0
+    },
+    "timestamp": [
+     1791540000
+    ],
+    "indicators": {
+     "quote": [
+      {
+       "open": [
+        null
+       ],
+       "close": [
+        1180.0
+       ],
+       "high": [
+        1190.0
+       ],
+       "low": [
+        1170.0
+       ],
+       "volume": [
+        0
+       ]
+      }
+     ]
+    }
+   }
+  ],
+  "error": null
+ }
+}

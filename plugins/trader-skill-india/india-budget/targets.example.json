@@ -1,0 +1,46 @@
+{
+  "source": "Parag Parikh Flexi Cap Fund holdings as listed by INDmoney, top 5 (read 2026-10-20; weights rounded to 0.1% by INDmoney, Amazon.com excluded as a foreign listing)",
+  "as_of": null,
+  "kind": "mutual fund",
+  "weights": [
+    {
+      "ticker": "HDFCBANK",
+      "name": "HDFC Bank Ltd",
+      "isin": "INE040A01034",
+      "weight": 35.14,
+      "pct_of_source": 7.8
+    },
+    {
+      "ticker": "ICICIBANK",
+      "name": "ICICI Bank Ltd",
+      "isin": "INE090A01021",
+      "weight": 23.42,
+      "pct_of_source": 5.2
+    },
+    {
+      "ticker": "M&M",
+      "name": "Mahindra & Mahindra Ltd",
+      "isin": "INE101A01026",
+      "weight": 17.57,
+      "pct_of_source": 3.9
+    },
+    {
+      "ticker": "AXISBANK",
+      "name": "Axis Bank Ltd",
+      "isin": "INE238A01034",
+      "weight": 12.61,
+      "pct_of_source": 2.8
+    },
+    {
+      "ticker": "TCS",
+      "name": "Tata Consultancy Services Ltd",
+      "isin": "INE467B01029",
+      "weight": 11.26,
+      "pct_of_source": 2.5
+    }
+  ],
+  "caveats": [
+    "INDmoney lists 20 equity rows rounded to 0.1%; for an exact copy use the AMC's monthly portfolio file.",
+    "A monthly portfolio is a snapshot of the last day of the month, published up to 10 days later."
+  ]
+}

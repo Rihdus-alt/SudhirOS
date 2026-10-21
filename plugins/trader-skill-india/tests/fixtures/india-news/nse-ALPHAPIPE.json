@@ -1,0 +1,37 @@
+[
+ {
+  "symbol": "ALPHAPIPE",
+  "desc": "Outcome of Board Meeting",
+  "dt": "18102026190512",
+  "attchmntFile": "https://nsearchives.nseindia.com/corporate/ALPHAPIPE_18102026190512_Outcome.pdf",
+  "sm_name": "Alpha Pipes Limited",
+  "sm_isin": "INE123Z01019",
+  "an_dt": "18-Oct-2026 19:05:12",
+  "sort_date": "2026-10-18 19:05:12",
+  "seq_id": "104455001",
+  "smIndustry": "Industrials",
+  "attchmntText": "Alpha Pipes Limited has informed the Exchange about Board Meeting held on October 18, 2026 inter alia to approve the unaudited financial results for the quarter ended September 30, 2026 and declared an interim dividend of Rs 4 per share. Record date October 30, 2026."
+ },
+ {
+  "symbol": "ALPHAPIPE",
+  "desc": "Resignation of Statutory Auditors",
+  "dt": "17102026210001",
+  "attchmntFile": "https://nsearchives.nseindia.com/corporate/ALPHAPIPE_17102026210001_Auditor.pdf",
+  "sm_name": "Alpha Pipes Limited",
+  "an_dt": "17-Oct-2026 21:00:01",
+  "sort_date": "2026-10-17 21:00:01",
+  "seq_id": "104455002",
+  "attchmntText": "Alpha Pipes Limited has informed the Exchange regarding resignation of M/s Example & Co., Statutory Auditors of the company."
+ },
+ {
+  "symbol": "ALPHAPIPE",
+  "desc": "Analysts/Institutional Investor Meet/Con. Call Updates",
+  "dt": "01102026100000",
+  "attchmntFile": "",
+  "sm_name": "Alpha Pipes Limited",
+  "an_dt": "01-Oct-2026 10:00:00",
+  "sort_date": "2026-10-01 10:00:00",
+  "seq_id": "104455003",
+  "attchmntText": "Schedule of analyst meet."
+ }
+]
