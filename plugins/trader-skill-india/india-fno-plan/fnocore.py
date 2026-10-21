@@ -117,9 +117,52 @@ def load_candles(src):
     rows = obj.get("candles", obj) if isinstance(obj, dict) else obj
     if not isinstance(rows, list):
         raise FnoError("no candles found")
+    late = _unfinished(rows, obj) if isinstance(obj, dict) else set()
+    load_candles.dropped = sorted(late)
+    rows = [r for r in rows if isinstance(r, dict) and str(r.get("datetime_ist") or r.get("date") or "") not in late]
     return _clean([{"date": r.get("datetime_ist") or r.get("date") or r.get("datetime"), "open": r.get("open"),
                     "high": r.get("high"), "low": r.get("low"), "close": r.get("close"),
                     "volume": r.get("volume")} for r in rows])
+
+
+load_candles.dropped = []
+
+
+def _unfinished(rows, obj):
+    """INDmoney returns the session still in progress as a candle (before the open it is a copy of the last day).
+    A setup must see finished bars only, so a candle whose period had not ended at query_end_ist is left out."""
+    q = str(obj.get("query_end_ist") or obj.get("retrieved_at_ist") or "").replace("T", " ")[:16]
+    iv = str(obj.get("interval") or "").lower()
+    try:
+        qt = datetime.datetime.strptime(q, "%Y-%m-%d %H:%M")
+    except ValueError:
+        return set()
+    out = set()
+    for r in rows:
+        stamp = str((r or {}).get("datetime_ist") or (r or {}).get("date") or "")
+        try:
+            day = datetime.datetime.strptime(stamp[:10], "%Y-%m-%d")
+        except ValueError:
+            continue
+        close = day.replace(hour=15, minute=30)
+        if iv == "1day":
+            end = close
+        elif iv.endswith("minute"):
+            try:
+                start = datetime.datetime.strptime(stamp[:16], "%Y-%m-%d %H:%M")
+                end = min(start + datetime.timedelta(minutes=int(iv[:-6] or 1)), close)
+            except ValueError:
+                continue
+        elif iv == "1week":
+            end = close + datetime.timedelta(days=4 - day.weekday())
+        elif iv == "1month":
+            nxt = (day.replace(day=28) + datetime.timedelta(days=4)).replace(day=1)
+            end = (nxt - datetime.timedelta(days=1)).replace(hour=15, minute=30)
+        else:
+            continue
+        if end > qt:
+            out.add(stamp)
+    return out
 
 
 def _clean(rows):
@@ -356,6 +399,24 @@ def implied_vol(price, F, K, T, r=0.0, kind="CE"):
         if hi - lo < 1e-7:
             break
     return (lo + hi) / 2
+
+
+def parse_now(text=None, chain=None):
+    """The option clock, as naive UTC. An ISO time without an offset is IST. With no time given, a chain's own
+    price time is used when it is older than the wall clock (its premiums were struck then), else the wall clock."""
+    if text:
+        dt = datetime.datetime.fromisoformat(str(text).strip().replace("Z", "+00:00"))
+        return dt - IST if dt.tzinfo is None else (dt - dt.utcoffset()).replace(tzinfo=None)
+    wall = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
+    t = (chain or {}).get("spot_time")
+    if t:
+        try:
+            ct = parse_now(str(t).replace(" ", "T"))
+        except ValueError:
+            ct = None
+        if ct and ct < wall:
+            return ct
+    return wall
 
 
 def years_to_expiry(expiry, now_utc):
@@ -619,6 +680,14 @@ def option_plan(lv, chain, cfg=None, now_utc=None, lot=None, underlying="NIFTY")
     budget = k["capital"] * k["risk_per_trade_pct"] / 100.0
     lots = int(budget // per_lot_risk) if per_lot_risk > 0 else 0
     lots = min(lots, int(k["max_lots_per_order"]))
+    # the premium at the stop and TP1 is priced at the expected time to reach them; when that is at or past
+    # expiry the premium is just what is left at settlement (often the 0.05 floor): no stop order can protect it
+    too_late = None
+    if max(t_sl, t_tp1) >= dte:
+        too_late = ("the stop is about %.1f days away and TP1 %.1f, but the contract has %.1f days left: its premium "
+                    "levels cannot be priced before expiry; use the next expiry" % (t_sl, t_tp1, dte))
+        note.append(too_late)
+        lots = 0
     hold_theta = pick["theta"] * t_tp2 * lot
     if pick["theta"] * t_tp2 < -0.25 * (tp2_p - entry_p):
         note.append("time decay over the expected holding (%.0f days) eats over a quarter of the target gain" % t_tp2)
@@ -632,7 +701,7 @@ def option_plan(lv, chain, cfg=None, now_utc=None, lot=None, underlying="NIFTY")
             "lot_size": lot, "lots": lots, "quantity": lots * lot, "per_lot_risk": round(per_lot_risk, 2),
             "max_loss_at_stop": round(lots * per_lot_risk, 2), "premium_outlay": round(lots * lot * entry_p, 2),
             "worst_case_loss": round(lots * lot * entry_p + rt * lots, 2), "risk_budget": round(budget, 2),
-            "why_zero": None if lots else ("one lot risks %s at the stop (premium %s -> %s x %d + charges), more than "
+            "why_zero": None if lots else too_late or ("one lot risks %s at the stop (premium %s -> %s x %d + charges), more than "
                                            "your %s budget" % (inr(per_lot_risk), entry_p, round(max(sl_p, 0.05), 2), lot,
                                                                inr(budget))),
             "notes": note, "derivative_id": pick.get("id")}
@@ -688,6 +757,27 @@ def trail(position, bars, atr_now, cfg=None):
 
 
 # ---------------------------------------------------------------- backtest
+
+MIN_CONTRACT_INR = 1500000.0   # SEBI's minimum value of an equity derivative contract (from November 2024)
+PACK_FILES = ("plans.json", "journal.json", "scan.json")
+
+
+def roundtrip_points(px, lot=None, cfg=None):
+    """Round-trip futures charges per unit, in price points, and the lot they were worked out on. Without a lot
+    size a contract of SEBI's minimum value stands in: charges are nearly all a percent of value, so the
+    estimate is close; a backtest without any charges would flatter every setup."""
+    use = int(lot) if lot else max(1, int(round(MIN_CONTRACT_INR / px)))
+    rates = costs.rates_from(cfg_with(cfg))
+    rt = costs.fno_costs("buy", px * use, "FUT", "NFO", rates)["total"] + \
+        costs.fno_costs("sell", px * use, "FUT", "NFO", rates)["total"]
+    return rt / use, use, not lot
+
+
+def not_candles(path):
+    """The pack's own JSON files that sit next to the candles in trader/fno/ (globs pick them up)."""
+    base = os.path.basename(path).lower()
+    return base in PACK_FILES or base.startswith("scan") or base.endswith("-chain.json")
+
 
 def backtest(c, cfg=None, enabled=SETUPS, cost_points=0.0, start=60, end=None):
     """Replay the setups bar by bar. Each signal on bar i enters at bar i+1's open; one position at a time.

@@ -33,7 +33,7 @@ python3 "${CLAUDE_SKILL_DIR}/alerts.py" add --symbol ICICIBANK --above 1450
 python3 "${CLAUDE_SKILL_DIR}/alerts.py" add --symbol AXISBANK --pct 3
 python3 "${CLAUDE_SKILL_DIR}/alerts.py" add --symbol TCS --near-circuit 2
 python3 "${CLAUDE_SKILL_DIR}/alerts.py" add --opening-bell
-python3 "${CLAUDE_SKILL_DIR}/alerts.py" check                          # exit 0 = something rang
+python3 "${CLAUDE_SKILL_DIR}/alerts.py" check                          # exit 0 = something rang, 2 = a symbol had no quote
 python3 "${CLAUDE_SKILL_DIR}/alerts.py" list
 python3 "${CLAUDE_SKILL_DIR}/alerts.py" reset hdfcbank-stop-680
 ```

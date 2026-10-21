@@ -60,34 +60,38 @@ def symbol_of(path):
 
 
 def run(files, cfg, setups, lots, split=0.0):
-    per, all_in, all_out = {}, [], []
+    per, all_in, all_out, skipped = {}, [], [], []
     for path in files:
         sym = symbol_of(path)
-        c = f.load_candles(path)
+        if f.not_candles(path):
+            skipped.append("%s: not a candle file" % path)
+            continue
+        try:
+            c = f.load_candles(path)
+        except f.FnoError as e:
+            skipped.append("%s: %s" % (path, e))
+            continue
         lot = lots.get(sym) or f.INDEX_LOTS.get(sym)
         px = c[-1]["close"]
-        cost_points = 0.0
-        if lot:
-            rates = f.costs.rates_from(f.cfg_with(cfg))
-            rt = f.costs.fno_costs("buy", px * lot, "FUT", "NFO", rates)["total"] + \
-                f.costs.fno_costs("sell", px * lot, "FUT", "NFO", rates)["total"]
-            cost_points = rt / lot
+        cost_points, charges_lot, assumed = f.roundtrip_points(px, lot, cfg)
         cut = int(len(c) * (1 - split)) if split else len(c) - 1
         tin = f.backtest(c, cfg, setups, cost_points, end=cut if split else None)
         tout = f.backtest(c, cfg, setups, cost_points, start=max(cut, 60)) if split else []
         for t in tin + tout:
             t["symbol"] = sym
         per[sym] = {"bars": len(c), "from": c[0]["date"], "to": c[-1]["date"], "cost_points": round(cost_points, 2),
-                    "lot": lot, "in_sample": f.stats(tin), "out_of_sample": f.stats(tout) if split else None,
+                    "lot": lot, "charges_lot": charges_lot, "lot_assumed": assumed, "in_sample": f.stats(tin), "out_of_sample": f.stats(tout) if split else None,
                     "trades": tin + tout, "split_date": c[cut]["date"] if split else None}
         all_in += tin
         all_out += tout
+    if not per:
+        raise f.FnoError("no candle files among the %d given (%s)" % (len(files), "; ".join(skipped)))
     by_setup = {}
     for s in setups:
         by_setup[s] = {"in_sample": f.stats([t for t in all_in if t["setup"] == s]),
                        "out_of_sample": f.stats([t for t in all_out if t["setup"] == s]) if split else None}
     return {"per_symbol": per, "pooled_in_sample": f.stats(all_in),
-            "pooled_out_of_sample": f.stats(all_out) if split else None, "by_setup": by_setup}
+            "pooled_out_of_sample": f.stats(all_out) if split else None, "by_setup": by_setup, "skipped": skipped}
 
 
 def line(label, st):
@@ -115,8 +119,10 @@ def verdict(st):
 def render(res, show_trades=False, split=0.0):
     L = []
     for sym, p in res["per_symbol"].items():
-        L.append("%s: %d bars %s to %s, costs %s points a round trip%s"
+        L.append("%s: %d bars %s to %s, costs %s points a round trip%s%s"
                  % (sym, p["bars"], p["from"], p["to"], p["cost_points"],
+                    (" (no lot size given: charges worked out on a %d-unit, Rs 15 lakh contract; pass --lots)"
+                     % p["charges_lot"]) if p.get("lot_assumed") else "",
                     (", held out from %s" % p["split_date"]) if split else ""))
         L.append("  " + line("in-sample" if split else "all", p["in_sample"]))
         if split:
@@ -136,6 +142,8 @@ def render(res, show_trades=False, split=0.0):
     L.append(line("POOLED" + (" in-sample" if split else ""), res["pooled_in_sample"]))
     if split:
         L.append(line("POOLED out-of-sample", res["pooled_out_of_sample"]))
+    for sk in res.get("skipped") or []:
+        L.append("skipped " + sk)
     L.append("Verdict: %s." % verdict(res["pooled_out_of_sample"] if split else res["pooled_in_sample"]))
     L.append("Past results on candles are not future results, and options behave differently from candles. "
              "Education and tooling, not financial advice.")

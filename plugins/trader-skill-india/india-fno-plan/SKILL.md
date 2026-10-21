@@ -30,7 +30,7 @@ FY2024-25 (SEBI).** Say it once, early.
 python3 "${CLAUDE_SKILL_DIR}/plan.py" new NIFTY --candles trader/fno/NIFTY-1d.json --direction short \
   --chain trader/fno/nifty-chain.json --instrument both --fut-price 22894 --capital 3000000 --risk-pct 1
 python3 "${CLAUDE_SKILL_DIR}/plan.py" new RELIANCE --candles trader/fno/RELIANCE-1d.json --direction long \
-  --lot 500 --instrument future --fut-expiry 20261124 --write
+  --lot 500 --instrument future --fut-expiry 20261123 --write
 python3 "${CLAUDE_SKILL_DIR}/plan.py" trail RELIANCE-20261019-FUT --candles trader/fno/RELIANCE-1d.json
 python3 "${CLAUDE_SKILL_DIR}/plan.py" list
 python3 "${CLAUDE_SKILL_DIR}/plan.py" close RELIANCE-20261019-FUT --price 1240 --reason "trailing stop"

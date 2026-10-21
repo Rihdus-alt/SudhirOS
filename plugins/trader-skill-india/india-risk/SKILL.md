@@ -73,6 +73,7 @@ F&O orders (exchange NFO or BFO, from /india-fno-plan) get their own checks:
 | stop | an entry without a stop-loss (`sl`), or a stop on the wrong side of the entry |
 | risk | the loss at the stop is over `fno.max_risk_per_trade_pct` of `fno.capital` (default 2%) |
 | option selling | selling an option you do not hold (`allow_option_selling` false); exits carry `"closing": true` |
+| closing | an order marked `"closing"` that does not reduce a position in `trader/fno/journal.json` (india-broker records every F&O fill there), or that is bigger than it: it is then checked as the new position it would open |
 | expiry | the contract has expired, or it is expiry day and the order opens a position |
 | band | a limit outside the exchange's execution band (from INDmoney's contract quote) |
 | cash | the estimated margin (futures) or premium plus charges (options) would dip into the cash buffer |

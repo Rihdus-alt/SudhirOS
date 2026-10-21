@@ -730,13 +730,17 @@ def cmd_check(a):
     status = market_status(now, cal)
     syms = _dedupe([norm_symbol(r["symbol"]) for r in rules if r.get("type") != "opening_bell"])
     quotes, errors = (get_quotes(syms, a.source, a.offline) if syms else ({}, []))
-    if a.prices_in:
-        pdoc = _read(a.prices_in, {}) or {}
+    # a symbol the live sources missed falls back to the last saved quote (an INDmoney import or an earlier
+    # check), with its own time so evaluate() can call it stale; a rule with no quote at all is NOT CHECKED
+    pin = a.prices_in or (a.prices_out if a.prices_out and os.path.exists(a.prices_out) else None)
+    if pin:
+        pdoc = _read(pin, {}) or {}
         for s, p in (pdoc.get("prices") or {}).items():
             if s in syms and s not in quotes:
                 q = dict((pdoc.get("detail") or {}).get(s) or {})
                 q.update({"symbol": s, "price": float(p), "source": q.get("source", "prices.json")})
                 quotes[s] = q
+    unchecked = [s for s in syms if s not in quotes]
     state = _read(a.state, {}) or {}
     rings, state = evaluate(rules, quotes, status, state, now)
     if not a.no_write:
@@ -745,20 +749,23 @@ def cmd_check(a):
         if fresh:
             write_prices(a.prices_out, fresh, now, a.source)
     if a.json:
-        print(json.dumps({"market": status, "rings": rings, "errors": errors,
+        print(json.dumps({"market": status, "rings": rings, "errors": errors, "not_checked": unchecked,
                           "quotes": {s: q["price"] for s, q in quotes.items()}}, indent=2))
     else:
         print("NSE %s (%s IST, %s)." % ("OPEN" if status["open"] else "closed", status["now_ist"], status["reason"]))
         for r in rings:
             print("ALERT " + r["message"])
+        for s in unchecked:
+            print("NOT CHECKED: %s (no quote from any source); its rules could not be tested" % s)
         if not rings:
-            print("Nothing hit. %d rule(s) watched." % len(rules))
+            print("Nothing hit. %d rule(s) watched%s." % (len(rules), (", %d symbol(s) NOT CHECKED" % len(unchecked))
+                                                          if unchecked else ""))
         for e in errors:
             print("error: " + e)
         if rings:
             print("An alert is information, not an order. To act on one, size it (india-budget or "
                   "india-rebalance), check it (india-risk) and say yes to it (india-broker).")
-    return 0 if rings else 1
+    return 0 if rings else (2 if unchecked else 1)
 
 
 def cmd_add(a):
@@ -860,7 +867,8 @@ def main(argv=None):
     net(p)
     p.add_argument("--rules", default="trader/alerts.json")
     p.add_argument("--state", default="trader/state/alerts.json")
-    p.add_argument("--prices-in", default=None, help="also use prices from this file (e.g. an INDmoney import)")
+    p.add_argument("--prices-in", default=None, help="fallback prices for symbols the live sources miss "
+                   "(default: --prices-out, trader/prices.json, where an INDmoney import is saved)")
     p.add_argument("--prices-out", default="trader/prices.json")
     p.add_argument("--no-write", action="store_true")
     p = sub.add_parser("add", help="add a rule")

@@ -86,7 +86,7 @@ def scan_one(sym, c, cfg, lot=None, chain=None, now_utc=None, enabled=f.SETUPS, 
         lv = f.levels(c, ind, i, s["direction"], cfg, resistance=res, support=sup)
         item = {"symbol": sym, "date": c[i]["date"], "setup": s["setup"], "direction": s["direction"],
                 "score": s["score"], "why": s["why"], "close": c[i]["close"], "levels": lv, "bars": len(c)}
-        cost_points = 0.0
+        cost_points = f.roundtrip_points(c[i]["close"], None, cfg)[0]
         if lot:
             item["futures"] = f.futures_sizing(lv, lot, c[i]["close"], cfg, index=sym in f.INDEX_LOTS)
             cost_points = item["futures"]["roundtrip_charges_per_lot"] / lot
@@ -188,7 +188,7 @@ def main(argv=None):
     ap.add_argument("--config", default="trader/config.json", help="reads the \"fno\" section")
     ap.add_argument("--capital", type=float)
     ap.add_argument("--risk-pct", type=float)
-    ap.add_argument("--now", help="ISO time (UTC) for option time to expiry; default now")
+    ap.add_argument("--now", help="ISO time for the option clock (no offset = IST); default: each chain's price time")
     ap.add_argument("--proven-only", action="store_true", help="only signals whose setup made money here before")
     ap.add_argument("--no-history", action="store_true", help="skip the per-signal backtest")
     ap.add_argument("--write", nargs="?", const="trader/fno/scan.json", metavar="PATH")
@@ -208,13 +208,18 @@ def main(argv=None):
             cfg["risk_per_trade_pct"] = a.risk_pct
         lots = parse_pairs(a.lots, int)
         chains = parse_pairs(a.chain)
-        now = (datetime.datetime.fromisoformat(a.now.replace("Z", "")) if a.now else None)
-        items, errors = [], []
+        items, errors, notes = [], [], []
         for path in a.candles:
             sym = symbol_of(path)
+            if f.not_candles(path):
+                continue
             try:
                 c = f.load_candles(path)
+                if f.load_candles.dropped:
+                    notes.append("%s: left out the unfinished bar of %s (the session had not closed when it was "
+                                 "fetched)" % (sym, ", ".join(f.load_candles.dropped)))
                 chain = f.parse_chain(chains[sym], sym) if sym in chains else None
+                now = f.parse_now(a.now, chain)
                 lot = lots.get(sym) or (chain or {}).get("lot_size") or f.INDEX_LOTS.get(sym)
                 items += scan_one(sym, c, cfg, lot, chain, now, tuple(a.setups), not a.no_history)
             except f.FnoError as e:
@@ -234,6 +239,8 @@ def main(argv=None):
         print(json.dumps({"signals": items, "errors": errors}, indent=2, ensure_ascii=False))
     else:
         print(render(items, a.proven_only))
+        for n in notes:
+            print("note: " + n)
         for e in errors:
             print("error: " + e)
     return 0 if items else 1

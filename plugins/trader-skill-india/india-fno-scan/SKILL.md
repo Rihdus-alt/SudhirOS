@@ -32,8 +32,8 @@ time this skill is used, and never call a signal a sure thing or quote an
 ```bash
 python3 "${CLAUDE_SKILL_DIR}/scan.py" --candles trader/fno/NIFTY-1d.json trader/fno/RELIANCE-1d.json \
   --lots RELIANCE=500 --chain NIFTY=trader/fno/nifty-chain.json --capital 500000 --risk-pct 1
-python3 "${CLAUDE_SKILL_DIR}/scan.py" --candles trader/fno/*.json --proven-only
-python3 "${CLAUDE_SKILL_DIR}/scan.py" --candles trader/fno/*.json --setups trend_pullback --json
+python3 "${CLAUDE_SKILL_DIR}/scan.py" --candles trader/fno/*-1d.json --proven-only
+python3 "${CLAUDE_SKILL_DIR}/scan.py" --candles trader/fno/*-1d.json --setups trend_pullback --json
 ```
 
 ## Getting the data (the INDmoney connector, if the user has it)
@@ -43,7 +43,9 @@ python3 "${CLAUDE_SKILL_DIR}/scan.py" --candles trader/fno/*.json --setups trend
 2. `get_indian_stocks_ohlc` with interval `1day`, lookback `1y` (or
    `15minute`/`60minute` over `7d`/`14d` for intraday). Save each result
    exactly as returned to `trader/fno/<SYMBOL>-1d.json`. The file name before
-   the first `-` is the symbol.
+   the first `-` is the symbol. During market hours the connector includes
+   today's unfinished candle; the tools leave it out (they read
+   `query_end_ist`) and say so, so a signal is always on a closed bar.
 3. For index or stock options: `get_indian_stocks_option_chain` on the
    underlying (nearest expiry, `strikes_around_atm` 10), saved to
    `trader/fno/<symbol>-chain.json`. It carries the lot size, bid/ask, OI and

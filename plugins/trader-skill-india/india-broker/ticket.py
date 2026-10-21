@@ -524,7 +524,7 @@ def cmd_fill(a):
     cfg = read_json(a.config, "config", required=False) or {}
     date = a.date or datetime.date.today().isoformat()
     exch = a.exchange.upper()
-    if exch in ("NSE", "BSE") and re.match(r"^[A-Z&\-]+\d{2}[A-Z0-9]{3}[\d.]*(CE|PE|FUT)$", a.symbol.upper()):
+    if exch in ("NSE", "BSE") and re.match(r"^[A-Z][A-Z0-9&\-]*?\d{2}[A-Z0-9]{3}[\d.]*(CE|PE|FUT)$", a.symbol.upper()):
         exch = "NFO" if exch == "NSE" else "BFO"
     pf, sale = apply_fill(a.portfolio, cfg, a.symbol, a.side, a.qty, a.price, date, a.charges, a.stt, exch)
     write_json(a.portfolio, pf)

@@ -64,7 +64,7 @@ FNO_DEFAULTS = {"capital": None, "max_risk_per_trade_pct": 2.0, "max_lots_per_or
                 "allow_option_selling": False, "allow_expiry_day_entries": False,
                 "futures_margin_pct": {"index": 12.0, "stock": 20.0}}
 INDEX_LOTS = {"NIFTY": 65, "BANKNIFTY": 30, "FINNIFTY": 60, "MIDCPNIFTY": 120, "NIFTYNXT50": 25}
-UNDERLYING = re.compile(r"^([A-Z&\-]+?)\d{2}(?:JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC|[1-9OND]\d{2})")
+UNDERLYING = re.compile(r"^([A-Z][A-Z0-9&\-]*?)\d{2}(?:JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC|[1-9OND]\d{2})")
 ORDER_FIELDS = ("variety", "exchange", "tradingsymbol", "transaction_type", "quantity", "product",
                 "order_type", "price", "trigger_price", "validity", "disclosed_quantity", "tag")
 PRODUCTS = {"CNC", "MIS", "MTF", "NRML"}
@@ -73,7 +73,7 @@ VALIDITIES = {"DAY", "IOC"}
 VARIETIES = {"regular", "amo"}
 EQUITY = re.compile(r"^[A-Z0-9][A-Z0-9&\-]{0,19}$")
 BSE_CODE = re.compile(r"^\d{6}$")
-DERIVATIVE = re.compile(r"^[A-Z&\-]+\d{2}(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC|[1-9OND]\d{2})"
+DERIVATIVE = re.compile(r"^[A-Z][A-Z0-9&\-]*?\d{2}(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC|[1-9OND]\d{2})"
                         r"[\d.]*(CE|PE|FUT)$")
 PAISA = 0.005
 
@@ -173,8 +173,12 @@ def _is_int(v):
     return f is not None and abs(f - round(f)) < 1e-9
 
 
-def check(orders, cfg, portfolio=None, prices=None, details=None, state=None, today=None, prices_age_hours=None):
-    """Pure function. Returns {"results": [...], "pass": n, "block": n, "warnings": [...]}."""
+def check(orders, cfg, portfolio=None, prices=None, details=None, state=None, today=None, prices_age_hours=None,
+          fno_positions=None):
+    """Pure function. Returns {"results": [...], "pass": n, "block": n, "warnings": [...]}.
+
+    fno_positions: {tradingsymbol: signed quantity} from the F&O journal (india-broker writes it on every fill);
+    an order marked "closing" must reduce one of these, or it is checked as what it really is, a new position."""
     c = dict(DEFAULTS)
     c.update(cfg or {})
     rates = costs.rates_from(c)
@@ -193,13 +197,15 @@ def check(orders, cfg, portfolio=None, prices=None, details=None, state=None, to
         top_warn.append("prices are %.0f hours old: refresh them (india-alerts) before trusting the sizes"
                         % prices_age_hours)
     sold_today = set()
+    held = None if fno_positions is None else {norm(k): int(v) for k, v in fno_positions.items() if int(v)}
+    closing_used = {}
 
     for i, o in enumerate(orders, 1):
         reasons, warns = [], []
         sym = norm(o.get("tradingsymbol") or o.get("symbol"))
         exch = str(o.get("exchange", "NSE")).strip().upper()
         if exch in ("NFO", "BFO"):
-            r = check_fno(o, c, acct, prices, details, today, sold_today)
+            r = check_fno(o, c, acct, prices, details, today, sold_today, held, closing_used)
             side = r["side"]
             key = (sym, side)
             if key in seen:
@@ -412,8 +418,10 @@ def check(orders, cfg, portfolio=None, prices=None, details=None, state=None, to
             "warnings": top_warn, "cash_after": round(acct["cash"], 2)}
 
 
-def check_fno(o, c, acct, prices, details, today, sold_today):
-    """Checks for one futures or options order (exchange NFO or BFO). Returns reasons, warnings and money."""
+def check_fno(o, c, acct, prices, details, today, sold_today, held=None, closing_used=None):
+    """Checks for one futures or options order (exchange NFO or BFO). Returns reasons, warnings and money.
+
+    held: {tradingsymbol: signed quantity} from the F&O journal, None when there is no journal."""
     f = dict(FNO_DEFAULTS)
     f.update(c.get("fno") or {})
     rates = costs.rates_from(c)
@@ -425,6 +433,26 @@ def check_fno(o, c, acct, prices, details, today, sold_today):
     typ = str(o.get("order_type", "LIMIT")).upper()
     qty, price, trig = o.get("quantity"), _f(o.get("price")), _f(o.get("trigger_price"))
     closing = bool(o.get("closing"))
+    if closing:
+        # "closing" switches off the entry checks, so it has to be true: the order must reduce a position the
+        # journal holds, by no more than its size. Otherwise it is a new position and gets every check.
+        have = (held or {}).get(sym, 0)
+        q = int(_f(qty) or 0) if _is_int(qty) else 0
+        reduces = (side == "SELL" and have > 0) or (side == "BUY" and have < 0)
+        if held is None:
+            reasons.append("closing: no F&O journal (trader/fno/journal.json), so nothing shows this order exits a "
+                           "position; record the entry fill with india-broker (ticket.py fill) first")
+            closing = False
+        elif not reduces or q > abs(have):
+            reasons.append("closing: the journal holds %d of %s; a closing %s of %s would %s" % (
+                have, sym, side or "order", qty, "open a new position" if not reduces else "go past flat into a "
+                "new position"))
+            closing = False
+        elif closing_used is not None:
+            closing_used[sym] = closing_used.get(sym, 0) + q
+            if closing_used[sym] > abs(have):
+                warns.append("these exits together cover %d of the %d held: when one fills, cancel the others, or "
+                             "the next fill opens a new position" % (closing_used[sym], abs(have)))
     d = details.get(sym) or {}
     if not c.get("allow_fno"):
         reasons.append("product: futures and options are off (\"allow_fno\": false in trader/config.json); turn them "
@@ -584,6 +612,7 @@ def main(argv=None):
                     help="your account; if missing, a fresh account funded with the budget")
     ap.add_argument("--prices", default="trader/prices.json")
     ap.add_argument("--state", default="trader/state/broker.json", help="what india-broker placed today")
+    ap.add_argument("--fno-journal", help="F&O positions (default: fno/journal.json next to the portfolio)")
     ap.add_argument("--today", help="YYYY-MM-DD (default: today)")
     ap.add_argument("--out", default="trader/state/risk.json")
     ap.add_argument("--no-write", action="store_true")
@@ -600,7 +629,10 @@ def main(argv=None):
         prices = pdoc.get("prices", pdoc) if isinstance(pdoc, dict) else {}
         state = read_json(a.state, "broker state", required=False)
         age = None if a.today else _age_hours(pdoc.get("as_of"))
-        res = check(orders, cfg, portfolio, prices, pdoc.get("detail") or {}, state, a.today, age)
+        jpath = a.fno_journal or os.path.join(os.path.dirname(a.portfolio) or ".", "fno", "journal.json")
+        journal = read_json(jpath, "F&O journal", required=False)
+        fno_pos = None if journal is None else {k: v.get("qty", 0) for k, v in (journal.get("positions") or {}).items()}
+        res = check(orders, cfg, portfolio, prices, pdoc.get("detail") or {}, state, a.today, age, fno_pos)
         if pdoc.get("as_of"):
             res["prices_as_of"] = pdoc["as_of"]
         if not a.no_write:

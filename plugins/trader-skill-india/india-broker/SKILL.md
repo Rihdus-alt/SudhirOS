@@ -88,7 +88,9 @@ transaction_type, quantity, product, order_type, price, validity). Another
 broker's connector: map the same fields to its tool and say so on the ticket.
 
 In Claude Code, keep the order tool on ask in `.claude/settings.json`:
-`"permissions": {"ask": ["mcp__kite__place_order"]}`, never in `allow`.
+`"permissions": {"ask": ["mcp__kite__place_order", "mcp__kite__modify_order", "mcp__kite__cancel_order",
+"mcp__kite__place_gtt_order", "mcp__kite__modify_gtt_order", "mcp__kite__delete_gtt_order"]}`, never in
+`allow` (this repository's own settings do exactly that).
 
 The INDmoney connector is read-only (portfolio, prices, funds): use it for
 prices and holdings, not orders.

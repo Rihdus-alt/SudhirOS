@@ -197,6 +197,79 @@ class Levels(unittest.TestCase):
         self.assertLessEqual(op["max_loss_at_stop"], 30000)
 
 
+class Freshness(unittest.TestCase):
+    """The tools must see finished bars only, and price options on the chain's own clock."""
+
+    def obj(self, q, interval="1day", stamps=None):
+        c = f.load_candles(NIFTY)[-40:]
+        rows = [{"datetime_ist": b["date"] + " 05:30:00", "open": b["open"], "high": b["high"], "low": b["low"],
+                 "close": b["close"], "volume": b["volume"]} for b in c]
+        rows.append({"datetime_ist": "2026-10-21 05:30:00", "open": 23150.85, "high": 23175.25, "low": 22845,
+                     "close": 23040.15, "volume": 0})
+        return {"interval": interval, "query_end_ist": q, "candles": rows}
+
+    def test_todays_bar_is_left_out_until_the_close(self):
+        c = f.load_candles(self.obj("2026-10-21 09:04:43"))
+        self.assertEqual(c[-1]["date"], "2026-10-19")
+        self.assertEqual(f.load_candles.dropped, ["2026-10-21 05:30:00"])
+        c = f.load_candles(self.obj("2026-10-21 16:09:21"))
+        self.assertEqual(c[-1]["date"], "2026-10-21")
+        self.assertEqual(f.load_candles.dropped, [])
+
+    def test_intraday_bar_in_progress_is_left_out(self):
+        rows = [{"datetime_ist": "2026-10-21 %s:00" % t, "open": 100, "high": 101, "low": 99, "close": 100, "volume": 1}
+                for t in ["%02d:%02d" % divmod(555 + 15 * n, 60) for n in range(25)]]   # 09:15 .. 15:15
+        rows = rows + [dict(r, datetime_ist=r["datetime_ist"].replace("2026-10-21", "2026-10-20")) for r in rows]
+        self.assertEqual(f._unfinished(rows, {"interval": "15minute", "query_end_ist": "2026-10-21 15:20:00"}),
+                         {"2026-10-21 15:15:00"})
+        self.assertEqual(f._unfinished(rows, {"interval": "15minute", "query_end_ist": "2026-10-21 15:31:00"}), set())
+
+    def test_one_clock_for_every_tool(self):
+        self.assertEqual(f.parse_now("2026-10-19T15:30"), CLOSE)
+        self.assertEqual(f.parse_now("2026-10-19T15:30+05:30"), CLOSE)
+        self.assertEqual(f.parse_now("2026-10-19T10:00Z"), CLOSE)
+        ch = f.parse_chain(CHAIN)
+        self.assertEqual(f.parse_now(None, ch), f.parse_now(ch["spot_time"]))
+        self.assertEqual(f.parse_now("2026-10-19T15:30", ch), CLOSE)
+
+    def test_scan_now_with_offset_and_chain_clock(self):
+        code, out, err = run(scan, ["--candles", NIFTY, "--chain", "NIFTY=" + CHAIN, "--no-history", "--capital",
+                                    "3000000", "--now", "2026-10-19T15:30+05:30", "--config", "/nonexistent"])
+        self.assertEqual(code, 0, err)
+        self.assertIn("8.0 days", out.replace("8.00 days", "8.0 days"))
+
+
+class Expiry(unittest.TestCase):
+    LIST = ["20261027", "20261103", "20261109", "20261117", "20261123", "20261229"]
+
+    def test_futures_take_the_monthly_expiry(self):
+        weekly = {"expiry": "20261103", "expiry_list": self.LIST}
+        self.assertEqual(plan.fut_expiry(None, weekly), "20261123")
+        self.assertEqual(plan.fut_expiry("20261123", weekly), "20261123")
+        for bad, want in (("20261103", "weekly"), ("20261124", "not an expiry")):
+            with self.assertRaises(plan.f.FnoError) as e:
+                plan.fut_expiry(bad, weekly)
+            self.assertIn(want, str(e.exception))
+        with self.assertRaises(plan.f.FnoError):
+            plan.fut_expiry(None, {"expiry": "20261103"})
+
+    def test_option_plan_refuses_levels_past_expiry(self):
+        c = f.load_candles(NIFTY)
+        ind = f.indicators(c)
+        lv = f.levels(c, ind, len(c) - 1, "short")
+        late = f.parse_now("2026-10-26T15:00")
+        op = f.option_plan(lv, f.parse_chain(CHAIN), {"capital": 3000000}, late, None, "NIFTY")
+        self.assertEqual(op["lots"], 0)
+        self.assertIn("next expiry", op["why_zero"])
+        ok = f.option_plan(lv, f.parse_chain(CHAIN), {"capital": 3000000}, CLOSE, None, "NIFTY")
+        self.assertGreater(ok["lots"], 0)
+
+    def test_stop_limit_never_rounds_to_zero(self):
+        o = plan._order("NIFTY26OCT22950PE", "BUY", 65, 199.3, "OPT", {"symbol": "NIFTY", "bar_date": "2026-10-19",
+                        "direction": "short"}, 65, "20261027", 0.05, 480.0, 870.0, 1000.0, "premium")
+        self.assertEqual(o["then"][0]["price"], 0.05)
+
+
 class Trail(unittest.TestCase):
     base = {"direction": "long", "entry": 100.0, "stop": 95.0, "tp1": 105.0, "tp2": 110.0, "best": 100.0,
             "stage": "open", "bars_held": 0}
@@ -265,6 +338,20 @@ class Backtest(unittest.TestCase):
         a = f.backtest(f.load_candles(NIFTY))
         b = f.backtest(f.load_candles(REL))
         self.assertEqual(f.stats(a + b)["max_drawdown_r"], f.stats(b + a)["max_drawdown_r"])
+
+    def test_pack_files_in_the_glob_are_skipped_and_missing_lots_still_cost(self):
+        with tempfile.TemporaryDirectory() as d:
+            for name in ("plans.json", "NIFTY-chain.json"):
+                with open(os.path.join(d, name), "w") as fh:
+                    json.dump({"plans": []}, fh)
+            res = bt.run([REL, os.path.join(d, "plans.json"), os.path.join(d, "NIFTY-chain.json")], {},
+                         f.SETUPS, {})
+        self.assertEqual(len(res["skipped"]), 2)
+        rel = res["per_symbol"]["RELIANCE"]
+        self.assertTrue(rel["lot_assumed"])
+        self.assertGreater(rel["cost_points"], 0.5)
+        with self.assertRaises(bt.f.FnoError):
+            bt.run([CHAIN], {}, f.SETUPS, {})
 
     def test_cli_split(self):
         code, out, _ = run(bt, [NIFTY, REL, HDFC, "--lots", "RELIANCE=500", "HDFCBANK=550", "--split", "0.3",
@@ -365,8 +452,8 @@ class RiskFno(unittest.TestCase):
         d.update(kw)
         return d
 
-    def one(self, order, cfg=None, today="2026-10-20", details=None):
-        return check.check([order], cfg or self.cfg, None, {}, details or {}, None, today)["results"][0]
+    def one(self, order, cfg=None, today="2026-10-20", details=None, held=None):
+        return check.check([order], cfg or self.cfg, None, {}, details or {}, None, today, None, held)["results"][0]
 
     def test_a_good_order_passes(self):
         r = self.one(self.o())
@@ -391,9 +478,40 @@ class RiskFno(unittest.TestCase):
             self.assertTrue(any(want in x for x in r["reasons"]), (want, r["reasons"]))
 
     def test_closing_sell_and_exec_band(self):
-        self.assertEqual(self.one(self.o(transaction_type="SELL", closing=True, sl=None))["verdict"], "PASS")
+        held = {"NIFTY26OCT22950PE": 65}
+        self.assertEqual(self.one(self.o(transaction_type="SELL", closing=True, sl=None), held=held)["verdict"], "PASS")
         r = self.one(self.o(), details={"NIFTY26OCT22950PE": {"high_exec_band": 190.0, "low_exec_band": 120.0}})
         self.assertTrue(any(x.startswith("band") for x in r["reasons"]))
+
+    def test_closing_must_reduce_a_held_position(self):
+        exit_ = self.o(transaction_type="SELL", closing=True, sl=None)
+        for held, want in ((None, "closing: no F&O journal"), ({}, "would open a new position"),
+                           ({"NIFTY26OCT22950PE": -65}, "would open a new position"),
+                           ({"NIFTY26OCT22950PE": 65}, None)):
+            r = self.one(exit_, held=held)
+            if want is None:
+                self.assertEqual(r["verdict"], "PASS", r["reasons"])
+                continue
+            self.assertEqual(r["verdict"], "BLOCK")
+            self.assertTrue(any(want in x for x in r["reasons"]), r["reasons"])
+            # a false "closing" is checked as the new position it is: a naked option sale
+            self.assertTrue(any(x.startswith("short option") for x in r["reasons"]), r["reasons"])
+        big = self.one(self.o(transaction_type="SELL", closing=True, sl=None, quantity=3250), held={"NIFTY26OCT22950PE": 65})
+        self.assertTrue(any("go past flat" in x for x in big["reasons"]), big["reasons"])
+
+    def test_resting_exits_that_overlap_warn(self):
+        sl = self.o(transaction_type="SELL", closing=True, sl=None, order_type="SL", trigger_price=121.0, price=120.0)
+        tp = self.o(transaction_type="SELL", closing=True, sl=None, price=480.0, tag="tp1")
+        res = check.check([sl, tp], self.cfg, None, {}, {}, None, "2026-10-20", None, {"NIFTY26OCT22950PE": 65})
+        self.assertTrue(any("cancel the others" in w for r in res["results"] for w in r["warnings"]), res)
+
+    def test_niftynxt50_symbols_are_derivatives(self):
+        for sym in ("NIFTYNXT5026OCTFUT", "NIFTYNXT5026OCT68000CE"):
+            r = self.one(self.o(tradingsymbol=sym, underlying="NIFTYNXT50", lot_size=25, quantity=25, price=100.0, sl=60.0))
+            self.assertFalse(any(x.startswith("asset") for x in r["reasons"]), (sym, r["reasons"]))
+        self.assertEqual(check.UNDERLYING.match("NIFTYNXT5026OCTFUT").group(1), "NIFTYNXT50")
+        self.assertEqual(check.UNDERLYING.match("NIFTY26N0322900PE").group(1), "NIFTY")
+        self.assertEqual(check.UNDERLYING.match("M&M26OCT3000CE").group(1), "M&M")
 
     def test_stock_future_delivery_warning(self):
         r = self.one(self.o(tradingsymbol="RELIANCE26OCTFUT", underlying="RELIANCE", lot_size=500, quantity=500,

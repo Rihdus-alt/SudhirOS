@@ -182,6 +182,26 @@ class Cli(unittest.TestCase):
             self.assertEqual(code, 0)
             self.assertIn("ALERT HDFCBANK", out)
 
+    def test_check_falls_back_to_saved_prices_and_names_what_it_could_not_check(self):
+        with tempfile.TemporaryDirectory() as d:
+            prices = os.path.join(d, "prices.json")
+            run(["import", "indmoney", os.path.join(F, "indmoney-details-2026-10-19.json"), "--write", prices,
+                 "--now", "2026-10-20T10:00"])
+            rules = os.path.join(d, "alerts.json")
+            run(["add", "--rules", rules, "--symbol", "HDFCBANK", "--stop", "715"])
+            run(["add", "--rules", rules, "--symbol", "NOSUCHCO", "--above", "100"])
+            # no --prices-in: the saved trader/prices.json (here --prices-out) is the fallback
+            code, out, _ = run(["check", "--rules", rules, "--state", os.path.join(d, "s.json"), "--offline", d,
+                                "--prices-out", prices, "--now", "2026-10-21T10:00"])
+            self.assertEqual(code, 0, out)
+            self.assertIn("ALERT HDFCBANK", out)
+            self.assertIn("NOT CHECKED: NOSUCHCO", out)
+            os.remove(prices)
+            code, out, _ = run(["check", "--rules", rules, "--state", os.path.join(d, "s2.json"), "--offline", d,
+                                "--prices-out", prices, "--now", "2026-10-21T10:00", "--no-write"])
+            self.assertEqual(code, 2, out)
+            self.assertIn("NOT CHECKED", out)
+
     def test_clock_cli(self):
         code, out, _ = run(["clock", "--now", "2026-10-20T10:00", "--calendar", "/nonexistent"])
         self.assertEqual(code, 1)

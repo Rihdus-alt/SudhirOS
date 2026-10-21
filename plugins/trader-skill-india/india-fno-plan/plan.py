@@ -64,24 +64,18 @@ def load_cfg(a):
     return cfg
 
 
-def parse_now(text):
-    if not text:
-        return datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
-    dt = datetime.datetime.fromisoformat(text.replace("Z", "+00:00"))
-    if dt.tzinfo is None:
-        return dt - f.IST
-    return (dt - dt.utcoffset()).replace(tzinfo=None)
-
-
 def build(a):
     cfg = load_cfg(a)
     k = f.cfg_with(cfg)
     c = f.load_candles(a.candles)
+    if f.load_candles.dropped:
+        print("note: left out the unfinished bar of %s (the session had not closed when it was fetched)"
+              % ", ".join(f.load_candles.dropped), file=sys.stderr)
     ind = f.indicators(c, cfg)
     i = len(c) - 1
     sym = a.symbol.upper()
     chain = f.parse_chain(a.chain, sym) if a.chain else None
-    now = parse_now(a.now)
+    now = f.parse_now(a.now, chain)
     an = f.chain_analytics(chain, now, k["risk_free_rate"]) if chain else None
     lv = f.levels(c, ind, i, a.direction, cfg, entry=a.entry, resistance=(an or {}).get("resistance"),
                   support=(an or {}).get("support"))
@@ -115,10 +109,7 @@ def orders_for(plan, chain, k, a):
     buf = k["limit_buffer_pct"] / 100.0
     if plan.get("futures") and plan["futures"]["lots"]:
         fu = plan["futures"]
-        exp = a.fut_expiry or (chain or {}).get("expiry")
-        if not exp:
-            raise f.FnoError("which futures expiry? pass --fut-expiry YYYYMMDD (the last Tuesday of the month for "
-                             "NSE, moved earlier for a holiday)")
+        exp = fut_expiry(a.fut_expiry, chain)
         ts = f.kite_symbol(plan["symbol"], exp, "FUT")
         fl = lv.get("fut_levels") or lv
         px = f.round_tick(fl["entry"] * (1 + buf), 0.1, True) if long_ else f.round_tick(fl["entry"] * (1 - buf), 0.1, False)
@@ -135,10 +126,29 @@ def orders_for(plan, chain, k, a):
     return out
 
 
+def fut_expiry(given, chain):
+    """Futures expire monthly. Without --fut-expiry, take the monthly expiry of the chain's month (a NIFTY chain
+    is often a weekly); a given date must be a monthly expiry on the chain's list when there is one."""
+    elist = sorted({str(x).replace("-", "")[:8] for x in (chain or {}).get("expiry_list") or []})
+    if given:
+        e = str(given).replace("-", "")[:8]
+        if elist and e not in elist:
+            raise f.FnoError("--fut-expiry %s is not an expiry of this contract (%s)" % (e, ", ".join(elist)))
+        if elist and not f.is_monthly(e, elist):
+            raise f.FnoError("--fut-expiry %s is a weekly expiry; futures expire on the month's last expiry" % e)
+        return e
+    cexp = str((chain or {}).get("expiry") or "").replace("-", "")[:8]
+    month = [x for x in elist if x[:6] == cexp[:6]]
+    if cexp and month:
+        return max(month)
+    raise f.FnoError("which futures expiry? pass --fut-expiry YYYYMMDD (the month's last Tuesday on NSE, moved "
+                     "earlier for a holiday; the option chain's expiry_list shows it)")
+
+
 def _order(ts, side, qty, price, kind, plan, lot, expiry, sl, tp1, tp2, max_loss, level_on):
     plan_id = "%s-%s-%s" % (plan["symbol"], plan["bar_date"].replace("-", "")[:8], kind)
     long_ = side == "BUY"
-    sl_limit = f.round_tick(sl * (0.99 if long_ else 1.01), 0.05, not long_)
+    sl_limit = max(f.round_tick(sl * (0.99 if long_ else 1.01), 0.05, not long_), 0.05)
     return {"variety": "regular", "exchange": "NFO", "tradingsymbol": ts, "transaction_type": side, "quantity": int(qty),
             "product": "NRML", "order_type": "LIMIT", "price": price, "validity": "DAY",
             "segment": kind, "lot_size": int(lot), "expiry": str(expiry), "underlying": plan["symbol"],
@@ -270,7 +280,7 @@ def cmd_trail(a):
     events = []
     last = None
     for n in idx:
-        if exp_day and c[n]["date"] > exp_day:
+        if exp_day and c[n]["date"][:10] > exp_day:
             break
         # each bar is judged with the ATR known before it opened
         pos, ev = f.trail(pos, [c[n]], ind["atr"][n - 1] or ind["atr"][n], cfg)
@@ -279,18 +289,20 @@ def cmd_trail(a):
         if pos.get("closed"):
             break
     if last is None:
-        print("The contract expired on %s, before any new bar." % exp_day)
+        p.update(status="expired", exit_date=exp_day)
+        write_json(a.plans, book)
+        print("The contract expired on %s, before any new bar: plan %s marked expired." % (exp_day, p["id"]))
         return 1
     p.update(stop=pos["stop"], best=pos["best"], stage=pos["stage"], bars_held=pos["bars_held"], last_bar=last["date"])
     if pos.get("closed"):
         p.update(status="exit signalled", exit_hint=pos["exit"], exit_date=pos["exit_date"])
-    elif exp_day and last["date"] >= exp_day:
+    elif exp_day and last["date"][:10] >= exp_day:
         events.append({"date": exp_day, "event": "EXPIRED: the contract settled at the close; roll to the next "
                                                  "month only as a new decision", "price": last["close"]})
         p.update(status="expired", exit_hint=last["close"], exit_date=exp_day)
         pos["closed"] = True
     elif exp_day and p["symbol"] not in f.INDEX_LOTS:
-        days = (datetime.date.fromisoformat(exp_day) - datetime.date.fromisoformat(last["date"])).days
+        days = (datetime.date.fromisoformat(exp_day) - datetime.date.fromisoformat(last["date"][:10])).days
         if days <= 4:
             events.append({"date": last["date"], "event": "expiry on %s: stock F&O is settled by DELIVERY; an "
                                                           "open position or in-the-money option becomes shares to "
@@ -374,12 +386,12 @@ def main(argv=None):
     p.add_argument("--chain", help="option chain JSON (INDmoney or NSE)")
     p.add_argument("--entry", type=float, help="planned entry on the underlying (default: the last close)")
     p.add_argument("--lot", type=int)
-    p.add_argument("--fut-expiry", help="futures expiry YYYYMMDD (default: the chain's expiry)")
+    p.add_argument("--fut-expiry", help="futures expiry YYYYMMDD (default: the monthly expiry of the chain's month)")
     p.add_argument("--fut-price", type=float, help="the futures' last price: shifts the futures order's levels by "
                                                    "the basis to the underlying")
     p.add_argument("--capital", type=float)
     p.add_argument("--risk-pct", type=float)
-    p.add_argument("--now", help="ISO time for the option clock (no offset = IST)")
+    p.add_argument("--now", help="ISO time for the option clock (no offset = IST); default: the chain's price time")
     p.add_argument("--config", default="trader/config.json")
     p.add_argument("--write", action="store_true")
     p.add_argument("--force", action="store_true", help="write even a plan flagged not worth it")

@@ -25,7 +25,6 @@ breaks on expiry day. Use them for room-to-target checks, not as signals on thei
 """
 
 import argparse
-import datetime
 import importlib.util
 import json
 import os
@@ -45,15 +44,6 @@ def _core():
 
 
 f = _core()
-
-
-def parse_now(text):
-    if not text:
-        return datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
-    dt = datetime.datetime.fromisoformat(text.replace("Z", "+00:00"))
-    if dt.tzinfo is None:
-        return dt - f.IST
-    return (dt - dt.utcoffset()).replace(tzinfo=None)
 
 
 def render(an, n):
@@ -92,7 +82,7 @@ def main(argv=None):
     ap.add_argument("chain", help="INDmoney get_indian_stocks_option_chain output or NSE option-chain JSON")
     ap.add_argument("--underlying", help="name, if the file does not say")
     ap.add_argument("--expiry", help="NSE files carry several expiries: DD-Mon-YYYY")
-    ap.add_argument("--now", help="ISO time (no offset = IST); default now")
+    ap.add_argument("--now", help="ISO time (no offset = IST); default: the chain's own price time")
     ap.add_argument("--rate", type=float, default=0.065, help="risk-free rate for discounting (default 6.5%%)")
     ap.add_argument("--strikes", type=int, default=5, help="strikes each side of ATM in the table")
     ap.add_argument("--iv", nargs="*", default=[], help="STRIKE{CE|PE}=PRICE to solve an implied volatility")
@@ -100,7 +90,7 @@ def main(argv=None):
     a = ap.parse_args(argv)
     try:
         ch = f.parse_chain(a.chain, a.underlying, a.expiry)
-        now = parse_now(a.now)
+        now = f.parse_now(a.now, ch)
         an = f.chain_analytics(ch, now, a.rate)
         solved = []
         T = f.years_to_expiry(ch["expiry"], now)

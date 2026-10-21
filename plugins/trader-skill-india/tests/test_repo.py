@@ -92,6 +92,10 @@ class Repo(unittest.TestCase):
         self.assertIn("trader-skill", settings["extraKnownMarketplaces"])
         self.assertIs(settings["enabledPlugins"]["trader-skill-india@sudhiros"], True)
         self.assertFalse(any("place_order" in a for a in settings.get("permissions", {}).get("allow", [])))
+        # every tool that can create, change or cancel an order (GTTs are standing orders) asks first
+        for tool in ("place_order", "modify_order", "cancel_order", "place_gtt_order", "modify_gtt_order",
+                     "delete_gtt_order"):
+            self.assertIn("mcp__kite__" + tool, settings["permissions"]["ask"])
 
     @unittest.skipUnless(os.path.exists(os.path.join(REPO, "scripts", "build_claude_ai_skill.py")),
                          "not inside the SudhirOS repository (an installed copy)")

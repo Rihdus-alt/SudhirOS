@@ -25,7 +25,7 @@ the ones that disappoint.
 
 ```bash
 python3 "${CLAUDE_SKILL_DIR}/backtest.py" trader/fno/NIFTY-1d.json trader/fno/RELIANCE-1d.json --lots RELIANCE=500
-python3 "${CLAUDE_SKILL_DIR}/backtest.py" trader/fno/*.json --split 0.3          # hold out the last 30%
+python3 "${CLAUDE_SKILL_DIR}/backtest.py" trader/fno/*-1d.json --split 0.3          # hold out the last 30%
 python3 "${CLAUDE_SKILL_DIR}/backtest.py" trader/fno/NIFTY-1d.json --setups trend_pullback --trades
 ```
 
