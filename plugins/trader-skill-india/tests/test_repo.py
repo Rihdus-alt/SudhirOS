@@ -93,6 +93,32 @@ class Repo(unittest.TestCase):
         self.assertIs(settings["enabledPlugins"]["trader-skill-india@sudhiros"], True)
         self.assertFalse(any("place_order" in a for a in settings.get("permissions", {}).get("allow", [])))
 
+    @unittest.skipUnless(os.path.exists(os.path.join(REPO, "scripts", "build_claude_ai_skill.py")),
+                         "not inside the SudhirOS repository (an installed copy)")
+    def test_claude_ai_bundle(self):
+        import tempfile
+        import zipfile
+        with tempfile.TemporaryDirectory() as tmp:
+            out = os.path.join(tmp, "trader-india.zip")
+            r = subprocess.run([sys.executable, os.path.join(REPO, "scripts", "build_claude_ai_skill.py"),
+                                "--out", out], capture_output=True, text=True, timeout=60)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            with zipfile.ZipFile(out) as z:
+                names = z.namelist()
+                z.extractall(tmp)
+            self.assertTrue(all(n.startswith("trader-india/") for n in names))
+            self.assertFalse(any("/tests/" in n or n.endswith(".pyc") for n in names))
+            fm, text = frontmatter(os.path.join(tmp, "trader-india", "SKILL.md"))
+            self.assertIn("name: trader-india\n", fm + "\n")
+            desc = " ".join(fm.split("description: >-", 1)[1].split())
+            self.assertLessEqual(len(desc), 1024)
+            for s in SKILLS:
+                self.assertTrue(os.path.isfile(os.path.join(tmp, "trader-india", s, "SKILL.md")), s)
+                self.assertIn("`%s/`" % s, text, s)
+            r = subprocess.run([sys.executable, "-I", os.path.join(tmp, "trader-india", "india-fno-scan", "scan.py"),
+                                "--help"], capture_output=True, text=True, timeout=60, cwd=tmp)
+            self.assertEqual(r.returncode, 0, r.stderr)
+
     def test_readme(self):
         with open(os.path.join(ROOT, "README.md"), encoding="utf-8") as fh:
             readme = " ".join(fh.read().split())
