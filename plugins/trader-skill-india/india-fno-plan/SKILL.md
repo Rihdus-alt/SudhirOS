@@ -96,6 +96,9 @@ in-the-money stock option at expiry becomes a purchase or delivery of shares.
 2. Get candles and, for options, the chain (see /india-fno-scan).
 3. `plan.py new` and walk the user through the levels, the size, the max
    loss in rupees, and for options the premium levels and the worst case.
+   The plan carries the Time Machine's verdict (PASS, WATCH or FAIL, with
+   the numbers behind it). A plan it FAILS is not written without `--force`,
+   as with one flagged NOT WORTH IT; say so plainly and do not push `--force`.
 4. Only if the user wants it: `--write`, then /india-risk (with
    `"allow_fno": true` set by the user), then /india-broker.
 5. After each session: `plan.py trail` and tell the user the new stop.

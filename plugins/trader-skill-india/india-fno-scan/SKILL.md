@@ -86,9 +86,17 @@ changes them.
 3. Run `scan.py`. Exit 1 means nothing fired: say so; do not lower the bar to
    find something.
 4. For each signal, show: direction, setup, the levels, size and max loss,
-   the option alternative, and the track record WITH its interval. Lead with
-   any NOT WORTH IT flag and with a track record that is negative or thin.
-5. If the user wants to act: `/india-fno-plan` writes the entry order and
+   the option alternative, the track record WITH its interval, and the Time
+   Machine line. Lead with any NOT WORTH IT flag, a FAIL, and a track record
+   that is negative or thin.
+5. Every signal has already gone through the Time Machine (the scan is
+   ordered PASS, WATCH, FAIL): its bootstrap of this chart's own days and the
+   chain's implied volatility, after charges. FAIL means a method is
+   significantly negative (its 95% band lies below zero); PASS means a method
+   is significantly positive and none negative; WATCH, the usual answer, means
+   neither can be told from zero. Say which, and why. `--no-timemachine`
+   skips it; `/india-fno-timemachine` gives the full report for one signal.
+6. If the user wants to act: `/india-fno-plan` writes the entry order and
    saves the plan; then `/india-risk`, then `/india-broker`, one yes per order.
 
 ## Example (real data, NIFTY 50, close of 2026-10-19)

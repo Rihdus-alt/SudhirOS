@@ -314,8 +314,8 @@ class Backtest(unittest.TestCase):
             allt += f.backtest(c, cost_points=cp)
         st = f.stats(allt)
         self.assertEqual(st["trades"], 49)
-        self.assertAlmostEqual(st["expectancy_r"], -0.055, places=2)
-        self.assertAlmostEqual(st["max_drawdown_r"], -8.24, delta=0.01)
+        self.assertAlmostEqual(st["expectancy_r"], -0.048, places=3)
+        self.assertAlmostEqual(st["max_drawdown_r"], -8.08, delta=0.01)
         self.assertLess(st["win_rate"], st["breakeven_win_rate"])
 
     def test_r_is_planned_risk_and_tp1_books_its_real_price(self):
@@ -327,7 +327,8 @@ class Backtest(unittest.TestCase):
             sgn = 1 if t["direction"] == "long" else -1
             risk = abs(close[t["signal_date"]] - t["stop"])
             if any(e.startswith("TP1") for e in t["events"]):
-                want = 0.5 * sgn * (t["tp1"] - t["entry"]) / risk + 0.5 * sgn * (t["exit"] - t["entry"]) / risk
+                tp1 = t.get("tp1_fill") or t["tp1"]   # a session that opened past TP1 filled it at that open
+                want = 0.5 * sgn * (tp1 - t["entry"]) / risk + 0.5 * sgn * (t["exit"] - t["entry"]) / risk
                 checked += 1
             else:
                 want = sgn * (t["exit"] - t["entry"]) / risk

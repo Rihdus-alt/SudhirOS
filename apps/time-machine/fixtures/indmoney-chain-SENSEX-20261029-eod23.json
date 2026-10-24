@@ -1,0 +1,352 @@
+{
+ "retrieved_at_ist": "2026-10-24 22:40:00",
+ "entity_details": {
+  "name": "SENSEX",
+  "entity_type": "INDEX",
+  "ind_key": "INDI00050",
+  "exchange": "BSE",
+  "live_price": 73123.83,
+  "previous_close": 73249.39,
+  "price_updated_at_ist": "2026-10-23T16:00:00+05:30",
+  "price_mode": "live",
+  "overall_pcr_string": "0.80"
+ },
+ "selected_expiry": "20261029",
+ "expiry_list": [
+  "20261029",
+  "20261105",
+  "20261112",
+  "20261119",
+  "20261126",
+  "20261203",
+  "20261210",
+  "20261231"
+ ],
+ "option_chain_data": [
+  {
+   "strike_price": 72500,
+   "call_data": {
+    "derivative_id": "INDOBOZFWQAW",
+    "current_price": 1036.2,
+    "oi": 96280,
+    "volume": 0,
+    "iv": 0,
+    "lot_size": 20,
+    "delta": 0.68,
+    "buy_price": 1021.8,
+    "sell_price": 1041.85
+   },
+   "put_data": {
+    "derivative_id": "INDOB8IGUTTI",
+    "current_price": 338.35,
+    "oi": 358660,
+    "volume": 0,
+    "iv": 0,
+    "lot_size": 20,
+    "delta": -0.32,
+    "buy_price": 340.9,
+    "sell_price": 353.25
+   }
+  },
+  {
+   "strike_price": 72600,
+   "call_data": {
+    "derivative_id": "INDOBHALD2E5",
+    "current_price": 969.7,
+    "oi": 63220,
+    "volume": 0,
+    "iv": 0,
+    "lot_size": 20,
+    "delta": 0.65,
+    "buy_price": 968.15,
+    "sell_price": 977.05
+   },
+   "put_data": {
+    "derivative_id": "INDOB11QJFRX",
+    "current_price": 375.7,
+    "oi": 163540,
+    "volume": 0,
+    "iv": 0,
+    "lot_size": 20,
+    "delta": -0.35,
+    "buy_price": 377.5,
+    "sell_price": 385.85
+   }
+  },
+  {
+   "strike_price": 72700,
+   "call_data": {
+    "derivative_id": "INDOBFDBKLBY",
+    "current_price": 904.2,
+    "oi": 71980,
+    "volume": 0,
+    "iv": 0,
+    "lot_size": 20,
+    "delta": 0.63,
+    "buy_price": 900.05,
+    "sell_price": 917.95
+   },
+   "put_data": {
+    "derivative_id": "INDOBMFBADI2",
+    "current_price": 419.15,
+    "oi": 156320,
+    "volume": 0,
+    "iv": 0,
+    "lot_size": 20,
+    "delta": -0.37,
+    "buy_price": 412.5,
+    "sell_price": 420.4
+   }
+  },
+  {
+   "strike_price": 72800,
+   "call_data": {
+    "derivative_id": "INDOB7UEQPJS",
+    "current_price": 851.65,
+    "oi": 98720,
+    "volume": 0,
+    "iv": 0,
+    "lot_size": 20,
+    "delta": 0.61,
+    "buy_price": 837.15,
+    "sell_price": 854.85
+   },
+   "put_data": {
+    "derivative_id": "INDOBV0E1U3R",
+    "current_price": 458,
+    "oi": 181400,
+    "volume": 0,
+    "iv": 0,
+    "lot_size": 20,
+    "delta": -0.39,
+    "buy_price": 451.25,
+    "sell_price": 458
+   }
+  },
+  {
+   "strike_price": 72900,
+   "call_data": {
+    "derivative_id": "INDOBDCLJBFP",
+    "current_price": 776.4,
+    "oi": 149580,
+    "volume": 0,
+    "iv": 0,
+    "lot_size": 20,
+    "delta": 0.58,
+    "buy_price": 776,
+    "sell_price": 792
+   },
+   "put_data": {
+    "derivative_id": "INDOBQNQF93M",
+    "current_price": 497.9,
+    "oi": 152720,
+    "volume": 0,
+    "iv": 0,
+    "lot_size": 20,
+    "delta": -0.42,
+    "buy_price": 489.9,
+    "sell_price": 497.85
+   }
+  },
+  {
+   "strike_price": 73000,
+   "call_data": {
+    "derivative_id": "INDOB6GN0ZZ7",
+    "current_price": 723.1,
+    "oi": 362440,
+    "volume": 0,
+    "iv": 0,
+    "lot_size": 20,
+    "delta": 0.55,
+    "buy_price": 722.8,
+    "sell_price": 735
+   },
+   "put_data": {
+    "derivative_id": "INDOBXQKNJXC",
+    "current_price": 541,
+    "oi": 398420,
+    "volume": 0,
+    "iv": 0,
+    "lot_size": 20,
+    "delta": -0.45,
+    "buy_price": 531,
+    "sell_price": 542
+   }
+  },
+  {
+   "strike_price": 73100,
+   "call_data": {
+    "derivative_id": "INDOBEO6QICU",
+    "current_price": 671,
+    "oi": 172280,
+    "volume": 0,
+    "iv": 0,
+    "lot_size": 20,
+    "delta": 0.53,
+    "buy_price": 671,
+    "sell_price": 683.7
+   },
+   "put_data": {
+    "derivative_id": "INDOB2LHIBTR",
+    "current_price": 582.5,
+    "oi": 124960,
+    "volume": 0,
+    "iv": 0,
+    "lot_size": 20,
+    "delta": -0.47,
+    "buy_price": 573.7,
+    "sell_price": 588.7
+   }
+  },
+  {
+   "strike_price": 73200,
+   "call_data": {
+    "derivative_id": "INDOBYU78PF5",
+    "current_price": 618.2,
+    "oi": 123740,
+    "volume": 0,
+    "iv": 0,
+    "lot_size": 20,
+    "delta": 0.5,
+    "buy_price": 617.75,
+    "sell_price": 628.95
+   },
+   "put_data": {
+    "derivative_id": "INDOBPIHMVFP",
+    "current_price": 629.5,
+    "oi": 93580,
+    "volume": 0,
+    "iv": 0,
+    "lot_size": 20,
+    "delta": -0.5,
+    "buy_price": 623.3,
+    "sell_price": 629.5
+   }
+  },
+  {
+   "strike_price": 73300,
+   "call_data": {
+    "derivative_id": "INDOBKJ0V9M8",
+    "current_price": 579.15,
+    "oi": 109760,
+    "volume": 0,
+    "iv": 0,
+    "lot_size": 20,
+    "delta": 0.48,
+    "buy_price": 565.5,
+    "sell_price": 579.15
+   },
+   "put_data": {
+    "derivative_id": "INDOBHA9IOX8",
+    "current_price": 670.25,
+    "oi": 66080,
+    "volume": 0,
+    "iv": 0,
+    "lot_size": 20,
+    "delta": -0.52,
+    "buy_price": 670.3,
+    "sell_price": 684.85
+   }
+  },
+  {
+   "strike_price": 73400,
+   "call_data": {
+    "derivative_id": "INDOBPESYHS2",
+    "current_price": 520.6,
+    "oi": 136540,
+    "volume": 0,
+    "iv": 0,
+    "lot_size": 20,
+    "delta": 0.45,
+    "buy_price": 520.6,
+    "sell_price": 530
+   },
+   "put_data": {
+    "derivative_id": "INDOBKADM49L",
+    "current_price": 718.25,
+    "oi": 103260,
+    "volume": 0,
+    "iv": 0,
+    "lot_size": 20,
+    "delta": -0.55,
+    "buy_price": 722.8,
+    "sell_price": 745.5
+   }
+  },
+  {
+   "strike_price": 73500,
+   "call_data": {
+    "derivative_id": "INDOBU6L1FUA",
+    "current_price": 478,
+    "oi": 619200,
+    "volume": 0,
+    "iv": 0,
+    "lot_size": 20,
+    "delta": 0.43,
+    "buy_price": 478,
+    "sell_price": 486
+   },
+   "put_data": {
+    "derivative_id": "INDOBRKZ9HRP",
+    "current_price": 781.25,
+    "oi": 314240,
+    "volume": 0,
+    "iv": 0,
+    "lot_size": 20,
+    "delta": -0.57,
+    "buy_price": 781.25,
+    "sell_price": 792.15
+   }
+  },
+  {
+   "strike_price": 73600,
+   "call_data": {
+    "derivative_id": "INDOB085AZT0",
+    "current_price": 435.05,
+    "oi": 191260,
+    "volume": 0,
+    "iv": 0,
+    "lot_size": 20,
+    "delta": 0.4,
+    "buy_price": 434.4,
+    "sell_price": 443.9
+   },
+   "put_data": {
+    "derivative_id": "INDOB8Z80S27",
+    "current_price": 835,
+    "oi": 72920,
+    "volume": 0,
+    "iv": 0,
+    "lot_size": 20,
+    "delta": -0.6,
+    "buy_price": 831,
+    "sell_price": 848
+   }
+  },
+  {
+   "strike_price": 73700,
+   "call_data": {
+    "derivative_id": "INDOB5UQ4P1Z",
+    "current_price": 404,
+    "oi": 181520,
+    "volume": 0,
+    "iv": 0,
+    "lot_size": 20,
+    "delta": 0.38,
+    "buy_price": 390.75,
+    "sell_price": 404
+   },
+   "put_data": {
+    "derivative_id": "INDOBEKDIER2",
+    "current_price": 904.65,
+    "oi": 86100,
+    "volume": 0,
+    "iv": 0,
+    "lot_size": 20,
+    "delta": -0.62,
+    "buy_price": 885.6,
+    "sell_price": 911.85
+   }
+  }
+ ]
+}
