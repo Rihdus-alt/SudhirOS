@@ -112,6 +112,7 @@ def run_trade(bars, t, k, horizon=None):
     held = 0
     lo, hi = entry, entry
     tp1_bar = None
+    tp1_px = tp1
     tp2_bar = None
     exit_px, exit_bar, cls, gapped = None, None, None, False
     end = len(bars) if horizon is None else min(horizon, len(bars))
@@ -134,8 +135,10 @@ def run_trade(bars, t, k, horizon=None):
             continue
         if stage == "open" and ((h >= tp1) if long_ else (l <= tp1)):
             stage, tp1_bar = "tp1", n
+            # a session that opens past TP1 fills the resting TP1 limit at that better open
+            tp1_px = o if ((o >= tp1) if long_ else (o <= tp1)) else tp1
             if t["frac"] >= 1.0:
-                exit_px, exit_bar, cls = tp1, n, "tp1_all"
+                exit_px, exit_bar, cls = tp1_px, n, "tp1_all"
                 break
             if (long_ and entry > stop) or ((not long_) and entry < stop):
                 stop = entry
@@ -153,9 +156,10 @@ def run_trade(bars, t, k, horizon=None):
         exit_px, exit_bar, cls = bars[end - 1][3], end - 1, "horizon"
     risk = t["risk"]
     frac = t["frac"] if tp1_bar is not None else 0.0
-    pts = frac * sgn * (tp1 - entry) + (1.0 - frac) * sgn * (exit_px - entry)
+    pts = frac * sgn * (tp1_px - entry) + (1.0 - frac) * sgn * (exit_px - entry)
     return {"cls": cls, "entered": True, "entry": entry, "exit": exit_px, "exit_bar": exit_bar, "bars": held,
-            "tp1_bar": tp1_bar, "tp2_bar": tp2_bar, "gapped_stop": gapped and cls == "stop", "pts": pts,
+            "tp1_bar": tp1_bar, "tp1_px": tp1_px, "tp2_bar": tp2_bar, "gapped_stop": gapped and cls == "stop",
+            "pts": pts,
             "r": pts / risk if risk else 0.0, "mae_r": (sgn * (entry - (lo if long_ else hi))) / risk if risk else 0.0,
             "mfe_r": (sgn * ((hi if long_ else lo) - entry)) / risk if risk else 0.0, "risk": risk}
 
@@ -320,6 +324,58 @@ def bar_library(c, ind, keep_drift=False):
     return lib
 
 
+def resample(rng, lib, block=5.0):
+    """Another history of the same length: the library's days in stationary-bootstrap runs."""
+    out, j = [], rng.randrange(len(lib))
+    while len(out) < len(lib):
+        out.append(lib[j])
+        j = rng.randrange(len(lib)) if rng.random() < 1.0 / block else (j + 1) % len(lib)
+    return out
+
+
+def neutralise(lib, close0, atr0, hz, k, block, seed, n=3000, rounds=2):
+    """Take out the drift the ATR rescaling leaves behind. The library's mean close change is zero in ATR units,
+    but a path's ATR moves with the days it draws, so its price still drifts; a pilot of paths measures that
+    drift and every day is shifted by it (twice, to converge)."""
+    rng = random.Random("%s-neutral" % seed)
+    for _ in range(rounds):
+        tot = 0.0
+        for _ in range(n):
+            tot += bootstrap_path(rng, lib, close0, atr0, hz, k, block)[-1][3] - close0
+        d = tot / n / (hz * atr0)
+        lib = [[x[0] - d, x[1] - d, x[2] - d, x[3] - d] for x in lib]
+    return lib
+
+
+def history_se(lib, close0, atr0, hz, k, block, seed, t, cost_of, keep_drift, R=20, M=800):
+    """How far the bootstrap's expectancy could move with another year of history: resample the year itself,
+    rebuild the paths from each resample, and take the spread of the expectancies, less the part of that spread
+    which is only simulation noise. A verdict that counts simulation noise alone gets stronger with more paths
+    on the same 230-odd days; this one does not."""
+    rng = random.Random("%s-history" % seed)
+    exps, noise = [], []
+    for r in range(R):
+        lb = resample(rng, lib, block)
+        if not keep_drift:
+            mu = sum(x[3] for x in lb) / len(lb)
+            lb = neutralise([[x[0] - mu, x[1] - mu, x[2] - mu, x[3] - mu] for x in lb], close0, atr0, hz, k, block,
+                            "%s-%d" % (seed, r), n=max(200, M), rounds=1)
+        rs = []
+        for _ in range(M):
+            res = run_trade(bootstrap_path(rng, lb, close0, atr0, hz, k, block), t, k, hz)
+            if res["entered"]:
+                rs.append((res["pts"] - cost_of(res)) / (res["risk"] or t["risk"]))
+        if len(rs) > 1:
+            mu = sum(rs) / len(rs)
+            exps.append(mu)
+            noise.append(sum((x - mu) ** 2 for x in rs) / (len(rs) - 1) / len(rs))
+    if len(exps) < 3:
+        return None
+    m = sum(exps) / len(exps)
+    between = sum((x - m) ** 2 for x in exps) / (len(exps) - 1)
+    return math.sqrt(max(between - sum(noise) / len(noise), 0.0))
+
+
 def bootstrap_path(rng, lib, close0, atr0, n, k, block=5.0):
     """A stationary bootstrap (Politis-Romano): runs of consecutive real days, a new run with chance 1/block."""
     out = []
@@ -357,9 +413,13 @@ def implied_path(rng, close0, atr0, sigma, phi, n, k, dts=None):
     the next (a weekend is three days), the clock option IVs are quoted on; default 1/252 a session."""
     out, pc, a = [], close0, atr0
     period = k["atr_period"]
+    one = min(dts) if dts else 1.0 / TRADING_DAYS     # one session's own share of the clock
     for i in range(n):
         dt = dts[i] if dts else 1.0 / TRADING_DAYS
-        vg, vi = sigma * sigma * phi * dt, sigma * sigma * (1 - phi) * dt
+        # the session's range carries one session's intraday variance; the rest of the calendar time since the
+        # last close (a weekend, a holiday) arrives as the opening gap, as on a real Monday
+        vi = sigma * sigma * (1 - phi) * one
+        vg = max(sigma * sigma * dt - vi, 0.0)
         g = rng.gauss(0.0, 1.0) * math.sqrt(vg) - 0.5 * vg
         x = rng.gauss(0.0, 1.0) * math.sqrt(vi) - 0.5 * vi
         u1, u2 = 1.0 - rng.random(), 1.0 - rng.random()
@@ -397,7 +457,8 @@ def nse_holidays():
 
 class OptionLeg(object):
     """A bought option repriced with Black-76 along a path: the chain's own IV (sticky strike), time decay on
-    the calendar, the futures basis shrinking to zero at expiry, intrinsic value at expiry."""
+    the NSE calendar, today's basis held constant (the forward is the index level plus that basis all the way,
+    and the option settles on it at expiry), the ask to buy, the bid to sell, intrinsic value at expiry."""
 
     def __init__(self, op, chain, sessions, now_utc, k, exit_iv=None):
         self.kind, self.K, self.lot = op["kind"], float(op["strike"]), int(op["lot_size"])
@@ -445,7 +506,7 @@ class OptionLeg(object):
         entry = self.entry_premium(res["entry"])
         frac = tr["frac"] if res["tp1_bar"] is not None else 0.0
         p_exit = self.premium(res["exit"], res["exit_bar"])
-        p_tp1 = self.premium(tr["tp1"], res["tp1_bar"]) if res["tp1_bar"] is not None else 0.0
+        p_tp1 = self.premium(res["tp1_px"], res["tp1_bar"]) if res["tp1_bar"] is not None else 0.0
         gross = (frac * (p_tp1 - entry) + (1 - frac) * (p_exit - entry)) * self.lot
         sold = (frac * p_tp1 + (1 - frac) * p_exit) * self.lot
         ch = f.costs.fno_costs("buy", entry * self.lot, "OPT", "NFO", self.rates)["total"]
@@ -658,6 +719,8 @@ def analyse(c, cfg=None, direction=None, setup=None, entry=None, sl=None, tp1=No
     sims = []
     if "bootstrap" in methods:
         lib = bar_library(c, ind, keep_drift)
+        if not keep_drift:
+            lib = neutralise(lib, c[-1]["close"], ind["atr"][-1], hz, k, block, seed)
         sims.append(("bootstrap", lambda rng: bootstrap_path(rng, lib, c[-1]["close"], ind["atr"][-1], hz, k, block),
                      "%d paths from this chart's %d real days, blocks of about %g days, %s"
                      % (paths, len(lib), block, "the history's drift kept" if keep_drift else "drift removed")))
@@ -699,6 +762,11 @@ def analyse(c, cfg=None, direction=None, setup=None, entry=None, sl=None, tp1=No
             s["option_inr_per_lot"]["p_lose_half_premium"] = round(sum(1 for x in v if x <= -0.5 * prem) / float(len(v)), 4) if v else None
             s["option_inr_per_lot"]["p_held_to_expiry"] = round(opt_cls.count("expiry") / float(len(opt_cls)), 4)
         s["what"] = what
+        if name == "bootstrap" and s.get("entered") and paths >= 1000:
+            # fewer than 1,000 paths is a quick look: the history's own uncertainty is left out (and said so)
+            R, M = (20, 800) if paths >= 4000 else (12, 600)
+            s["history_se"] = history_se(bar_library(c, ind, keep_drift), c[-1]["close"], ind["atr"][-1], hz, k,
+                                         block, seed, t, cost_of, keep_drift, R, M)
         report["methods"][name] = s
     if grid and "bootstrap" in methods:
         report["grid"] = sensitivity(c, ind, k, tr, frac, hz, min(int(paths), 6000), seed, keep_drift, block, cost_points)
@@ -708,6 +776,8 @@ def analyse(c, cfg=None, direction=None, setup=None, entry=None, sl=None, tp1=No
 def sensitivity(c, ind, k, tr, frac, hz, paths, seed, keep_drift, block, cost_points):
     """Expectancy for other stops (in ATRs) and TP2 targets (in R) on the SAME bootstrap paths."""
     lib = bar_library(c, ind, keep_drift)
+    if not keep_drift:
+        lib = neutralise(lib, c[-1]["close"], ind["atr"][-1], hz, k, block, seed)
     a = ind["atr"][-1]
     e = c[-1]["close"]
     sgn = 1 if tr["direction"] == "long" else -1
@@ -776,12 +846,14 @@ def render(rep):
              % ("at the next open (about %s)" % inr(tr["entry_plan"]) if tr["limit"] is None else
                 "a DAY limit at %s from the next open" % inr(tr["limit"]), inr(tr["stop"]), tr["risk"],
                 tr["stop_atr"] or 0, inr(tr["tp1"]), tr["tp1_r"], inr(tr["tp2"]), tr["tp2_r"]))
-    L.append("  exits: at TP1 %s and the stop moves to entry; trail %s ATR, %s ATR after TP2; time stop %d bars; "
-             "horizon %d bars; charges %s points a round trip"
-             % ("the whole position exits (one lot cannot be split)" if tr["frac"] >= 1 else
-                ("%.0f%% is booked" % (100 * tr["frac"]) if tr["frac"] else "nothing is booked (--trail-whole)"),
-                tr["rules"]["trail_atr"], tr["rules"]["trail_after_tp2_atr"], tr["rules"]["time_stop_bars"],
-                rep["horizon_bars"], tr["cost_points"]))
+    if tr["frac"] >= 1:
+        exits = "at TP1 the whole position exits (one lot cannot be split; --trail-whole trails it instead)"
+    else:
+        exits = ("at TP1 %s and the stop moves to entry; trail %s ATR, %s ATR after TP2"
+                 % ("%.0f%% is booked" % (100 * tr["frac"]) if tr["frac"] else "nothing is booked (--trail-whole)",
+                    tr["rules"]["trail_atr"], tr["rules"]["trail_after_tp2_atr"]))
+    L.append("  exits: %s; time stop %d bars; horizon %d bars; charges %s points a round trip"
+             % (exits, tr["rules"]["time_stop_bars"], rep["horizon_bars"], tr["cost_points"]))
     L.append("  with no edge, P(TP1 before SL) = %.1f%% and P(TP2 before SL) = %.1f%% (risk / (risk + reward))"
              % (100 * tr["no_edge_p_tp1"], 100 * tr["no_edge_p_tp2"]))
     if tr.get("option"):
@@ -796,8 +868,12 @@ def render(rep):
     if not cols:
         return "\n".join(L)
     L.append("%-34s" % "How it ends (95% interval)" + "".join("%-25s" % _head(m, rep["methods"][m]) for m in cols))
+    # with one lot the TP1 order takes it all: what happens after TP1 cannot happen
+    after_tp1 = ("tp1_be", "tp1_trail", "tp2_trail")
     for key, label in OUTCOMES:
         if not any(key in rep["methods"][m].get("outcomes", {}) for m in cols):
+            continue
+        if tr["frac"] >= 1 and key in after_tp1:
             continue
         row = "  %-32s" % label
         for m in cols:
@@ -889,7 +965,8 @@ def _head(m, s):
     n = s.get("n", 0)
     ind = s.get("independent")
     return {"replay": "replay %d (%s ind.)" % (n, ind) if ind is not None else "replay (n=%d)" % n,
-            "baseline": "every bar %d" % n, "bootstrap": "bootstrap (%d)" % n,
+            "baseline": "every bar %d (%s ind.)" % (n, ind) if ind is not None else "every bar %d" % n,
+            "bootstrap": "bootstrap (%d)" % n,
             "implied": "implied IV (%d)" % n}.get(m, m)
 
 
@@ -906,25 +983,36 @@ def verdict(rep):
     lines = []
     sims = [(m, ms[m]) for m in ("bootstrap", "implied") if m in ms and ms[m].get("entered")]
     for m, s in sims:
-        se = s.get("expectancy_se") or 0
+        mc = s.get("expectancy_se") or 0
+        hist = s.get("history_se") or 0
+        se = math.hypot(mc, hist)
         lo, hi = s["expectancy_r"] - 1.96 * se, s["expectancy_r"] + 1.96 * se
         word = "positive" if lo > 0 else ("negative" if hi < 0 else "indistinguishable from zero")
-        lines.append("Verdict (%s): expectancy %+.3fR (95%% %+.3f to %+.3f), %s." % (m, s["expectancy_r"], lo, hi, word))
+        lines.append("Verdict (%s): expectancy %+.3fR (95%% %+.3f to %+.3f%s), %s."
+                     % (m, s["expectancy_r"], lo, hi, (", counting that one year of history is only one sample; "
+                                                       "the simulation alone is +/-%.3f" % (1.96 * mc)) if hist else
+                        " from the simulation; the model's own assumptions are not in it", word))
     rp, base = ms.get("replay"), ms.get("baseline")
     if rp and rp.get("entered"):
         if rp.get("independent", rp["entered"]) < 20:
             lines.append("Verdict (replay): %d past occurrences, %d of them independent: too few to judge (under 20); "
                          "read the interval, not the average." % (rp["entered"], rp.get("independent", rp["entered"])))
         else:
-            lines.append("Verdict (replay): %d past occurrences, expectancy %+.3fR against %+.3fR for entering on "
-                         "every bar the same way: %s." % (rp["entered"], rp["expectancy_r"], base.get("expectancy_r", 0),
-                                                          "the setup added something here" if
-                                                          rp["expectancy_r"] > (base.get("expectancy_r") or 0) else
-                                                          "the setup added nothing here"))
+            def eff_se(s):   # overlapping occurrences: the standard error of the independent episodes
+                return (s.get("expectancy_se") or 0) * math.sqrt(s["entered"] / float(max(s.get("independent") or 1, 1)))
+            diff = rp["expectancy_r"] - (base.get("expectancy_r") or 0)
+            tol = 1.96 * math.hypot(eff_se(rp), eff_se(base))
+            lines.append("Verdict (replay): %d past occurrences (%d independent), expectancy %+.3fR against %+.3fR for "
+                         "entering on every bar the same way: %s." % (
+                             rp["entered"], rp.get("independent", rp["entered"]), rp["expectancy_r"],
+                             base.get("expectancy_r") or 0, "the setup added something here" if diff > tol else
+                             ("the setup did worse here" if diff < -tol else
+                              "no difference this history can show (%+.3fR, noise +/-%.3fR)" % (diff, tol))))
     if len(sims) == 2:
         a, b = sims[0][1], sims[1][1]
         gap = abs(a["expectancy_r"] - b["expectancy_r"])
-        tol = 1.96 * math.hypot(a.get("expectancy_se") or 0, b.get("expectancy_se") or 0)
+        tol = 1.96 * math.hypot(math.hypot(a.get("expectancy_se") or 0, a.get("history_se") or 0),
+                                math.hypot(b.get("expectancy_se") or 0, b.get("history_se") or 0))
         if gap > tol:
             lines.append("The bootstrap and the implied paths disagree by %.3fR: the chart's own behaviour (gaps, "
                          "trends, mean reversion) differs from what the option prices assume." % gap)

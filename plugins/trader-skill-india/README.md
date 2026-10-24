@@ -116,17 +116,18 @@ everything that can be: the maths, the costs, the rules, and the measurement.
 - **The measurement.** Every signal shows its own backtest on that
   underlying. On a real year of NIFTY, RELIANCE and HDFC Bank daily bars, the
   four setups pooled to 49 trades, 49% wins (95% interval 36-62%) against a
-  53% break-even: -0.06R a trade after costs, no edge. Trend pullbacks looked
-  significant in the first 70% of the data (+0.39R, t 2.4) and lost -0.39R in
+  52% break-even: -0.05R a trade after costs, no edge. Trend pullbacks looked
+  significant in the first 70% of the data (+0.41R, t 2.4) and lost -0.39R in
   the held-out 30%. The pack says this to you instead of hiding it.
 - **Every outcome.** `/india-fno-timemachine` plays one trade forward
   through every path its three models allow (the chart's own history, a
   bootstrap of its real days, the option chain's implied volatility) with
   the same exit engine the planner uses, and counts how each path ends.
   On the NIFTY short of 2026-10-19 (2 lots): stop-loss before TP1 in 37%
-  of bootstrap paths and 38% of implied ones, TP2 in 21% and 17%,
-  expectancy -0.02R and -0.06R after costs, and the 5-session October put
-  still held at expiry in 58-60% of paths.
+  of bootstrap paths and 36% of implied ones, TP2 in 21% and 15%,
+  expectancy -0.01R (95% -0.10 to +0.08 once the single year of history is
+  counted) and -0.06R after costs, and the 5-session October put still held
+  at expiry in 58-62% of paths.
 - **The rules.** Whole lots (NIFTY 65, BANKNIFTY 30 from the 2025 revision;
   the chain's lot size wins), STT 0.05%/0.15% from April 2026, the exchange's
   execution band, expiry on Tuesday (moved earlier for holidays), physical

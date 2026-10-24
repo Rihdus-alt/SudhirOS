@@ -130,6 +130,43 @@ class Models(unittest.TestCase):
             self.assertGreaterEqual(h + 1e-9, max(g, cl))
             self.assertLessEqual(l - 1e-9, min(g, cl))
 
+    def test_neutral_bootstrap_has_no_price_drift(self):
+        c = f.load_candles(NIFTY)
+        k = f.cfg_with({})
+        ind = f.indicators(c, k)
+        a0, c0 = ind["atr"][-1], c[-1]["close"]
+        lib = tm.neutralise(tm.bar_library(c, ind), c0, a0, 40, k, 5.0, 1)
+        rng = random.Random(9)
+        moves = [tm.bootstrap_path(rng, lib, c0, a0, 40, k)[-1][3] - c0 for _ in range(4000)]
+        mu = sum(moves) / len(moves)
+        sd = math.sqrt(sum((x - mu) ** 2 for x in moves) / (len(moves) - 1))
+        self.assertLess(abs(mu), 3.5 * sd / math.sqrt(len(moves)) + 0.02 * a0, (mu, a0))
+
+    def test_history_uncertainty_is_in_the_bootstrap_verdict(self):
+        c = f.load_candles(NIFTY)
+        rep = tm.analyse(c, {}, direction="short", symbol="NIFTY", paths=2000, lots=2, methods=("bootstrap",))
+        s = rep["methods"]["bootstrap"]
+        self.assertGreater(s["history_se"], s["expectancy_se"])
+        self.assertTrue(any("one year of history" in v for v in tm.verdict(rep)))
+
+    def test_replay_verdict_needs_more_than_noise(self):
+        rep = {"methods": {"replay": {"entered": 60, "independent": 20, "expectancy_r": 0.012, "expectancy_se": 0.1},
+                           "baseline": {"entered": 300, "independent": 40, "expectancy_r": 0.002, "expectancy_se": 0.05}}}
+        self.assertIn("no difference this history can show", " ".join(tm.verdict(rep)))
+        rep["methods"]["replay"].update(expectancy_r=0.9, expectancy_se=0.05)
+        self.assertIn("added something", " ".join(tm.verdict(rep)))
+
+    def test_a_session_opening_past_tp1_fills_it_at_the_open(self):
+        k = f.cfg_with({})
+        t = {"direction": "long", "stop": 950.0, "tp1": 1050.0, "tp2": 1200.0, "risk": 50.0, "frac": 0.5}
+        res = tm.run_trade([(1000, 1010, 995, 1005, 10), (1070, 1080, 1060, 1075, 10)] + [(1075, 1076, 1074, 1075, 10)] * 2,
+                           t, k, 4)
+        self.assertEqual(res["tp1_px"], 1070)
+        pos = {"direction": "long", "entry": 1000, "stop": 950.0, "tp1": 1050.0, "tp2": 1200.0, "best": 1000,
+               "stage": "open", "bars_held": 0}
+        pos, ev = f.trail(pos, [{"date": "a", "open": 1070, "high": 1080, "low": 1060, "close": 1075}], 10, k)
+        self.assertEqual(pos["tp1_fill"], 1070)
+
     def test_overnight_share_is_measured(self):
         phi = tm.overnight_share(f.load_candles(NIFTY))
         self.assertTrue(0.0 < phi < 0.6, phi)
