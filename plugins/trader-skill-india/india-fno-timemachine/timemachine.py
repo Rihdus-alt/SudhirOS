@@ -508,10 +508,12 @@ class OptionLeg(object):
         p_exit = self.premium(res["exit"], res["exit_bar"])
         p_tp1 = self.premium(res["tp1_px"], res["tp1_bar"]) if res["tp1_bar"] is not None else 0.0
         gross = (frac * (p_tp1 - entry) + (1 - frac) * (p_exit - entry)) * self.lot
-        sold = (frac * p_tp1 + (1 - frac) * p_exit) * self.lot
         ch = f.costs.fno_costs("buy", entry * self.lot, "OPT", "NFO", self.rates)["total"]
-        if sold > 0:
-            ch += f.costs.fno_costs("sell", sold, "OPT", "NFO", self.rates)["total"]
+        # each sell order is its own order: its own brokerage, and its STT rounded on its own value
+        if frac > 0:
+            ch += f.costs.fno_costs("sell", frac * p_tp1 * self.lot, "OPT", "NFO", self.rates)["total"]
+        if 1 - frac > 0:
+            ch += f.costs.fno_costs("sell", (1 - frac) * p_exit * self.lot, "OPT", "NFO", self.rates)["total"]
         return gross - ch
 
 
