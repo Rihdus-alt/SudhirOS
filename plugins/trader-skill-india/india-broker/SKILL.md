@@ -110,7 +110,9 @@ prices and holdings, not orders.
    asks Allow once / Deny.
 5. Record the outcome: `result --status placed|denied|failed`. A failed order
    is not retried without a new check and a new yes.
-6. Record the fill from the contract note with `fill`. Lots keep the exact
+6. Record the fill from the contract note with `fill`, unless step 5 already did
+   (`result --filled-qty Q --filled-price P`, with `--charges` and `--stt` from
+   the contract note): running both counts the trade twice. Lots keep the exact
    cost: price x quantity plus charges except STT, the cost the Income-tax
    Act allows. A sell is matched first-in, first-out and logged for
    `/india-tax`. Then the next ticket.

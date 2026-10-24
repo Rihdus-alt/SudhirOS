@@ -180,6 +180,28 @@ def merge(quarters):
     return [by[k] for k in sorted(by)]
 
 
+def _csv_num(s, where):
+    """A results-table number: commas and the rupee sign dropped, (20) is -20, "-" or "NA" is no figure."""
+    t = s.replace(",", "").replace("\u20b9", "").strip()
+    if t.lower() in ("-", "--", "na", "n/a", "nil"):
+        return None
+    neg = t.startswith("(") and t.endswith(")")
+    try:
+        x = float(t[1:-1] if neg else t)
+    except ValueError:
+        raise ResultsError("%s: %r is not a number" % (where, s))
+    return -x if neg else x
+
+
+def _csv_date(s, where):
+    for fmt in ("%Y-%m-%d", "%d-%m-%Y", "%d/%m/%Y", "%d-%b-%Y", "%d %b %Y"):
+        try:
+            return datetime.datetime.strptime(s.strip()[:11].strip(), fmt).date().isoformat()
+        except ValueError:
+            continue
+    raise ResultsError("%s: period_end %r is not a date (use YYYY-MM-DD)" % (where, s))
+
+
 def load_csv(path):
     """Columns: period_end (YYYY-MM-DD), revenue, other_income, finance_costs, depreciation,
     exceptional, pbt, tax, net_profit, owners_profit, eps_diluted. Rupees, or add a "unit"
@@ -191,11 +213,14 @@ def load_csv(path):
             end = r.get("period_end") or r.get("end") or r.get("quarter_end")
             if not end:
                 raise ResultsError("%s needs a period_end column" % path)
+            end = _csv_date(end, path)
             unit = {"crore": CRORE, "cr": CRORE, "lakh": 1e5, "lakhs": 1e5}.get(r.get("unit", "").lower(), 1.0)
             q = {"end": end, "start": None, "basis": r.get("basis", "unknown")}
             for m in ALIASES:
                 if r.get(m) not in (None, ""):
-                    v = float(r[m].replace(",", ""))
+                    v = _csv_num(r[m], "%s %s %s" % (path, end, m))
+                    if v is None:
+                        continue
                     q[m] = v if m.startswith("eps") or m == "face_value" else v * unit
             out.append(q)
     return out
@@ -399,6 +424,9 @@ def cmd_read(a):
     res = analyse(quarters)
     qs = res["quarters"][-a.quarters:]
     row = metrics_row(symbol.upper(), name, res)
+    if a.metrics and row and not row.get("ticker"):
+        raise ResultsError("--metrics needs --symbol: these files do not name the company, and a row without a "
+                           "ticker breaks the screener's metrics file")
     if a.metrics and row:
         doc = {"as_of": datetime.date.today().isoformat(), "companies": []}
         if os.path.exists(a.metrics):

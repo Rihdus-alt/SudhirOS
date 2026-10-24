@@ -199,6 +199,7 @@ def check(orders, cfg, portfolio=None, prices=None, details=None, state=None, to
     sold_today = set()
     held = None if fno_positions is None else {norm(k): int(v) for k, v in fno_positions.items() if int(v)}
     closing_used = {}
+    sell_credit = []   # (order index, cash it brings) for each SELL passed earlier in this batch
 
     for i, o in enumerate(orders, 1):
         reasons, warns = [], []
@@ -358,8 +359,17 @@ def check(orders, cfg, portfolio=None, prices=None, details=None, state=None, to
         held_value = acct["values"].get(sym, 0.0)
         total = cash + sum(acct["values"].values())
         buffer_inr = total * float(c.get("cash_buffer_pct") or 0) / 100.0
+        needs_sells = []
         if value is not None and side == "BUY":
             after = cash - value - charges
+            # a passed SELL earlier in the batch is counted as cash, but it is approved and filled on its own;
+            # name the sells this buy depends on so india-broker holds it until they are placed
+            credit = sum(v for _, v in sell_credit)
+            if credit and after - credit < buffer_inr - PAISA:
+                needs_sells = [k for k, _ in sell_credit]
+            if not ltp and held > 0:
+                reasons.append("price: no last price for %s, which you already hold, so the position cap cannot be "
+                               "checked; refresh trader/prices.json (india-alerts)" % sym)
             if after < -PAISA and not (c.get("allow_mtf") and product == "MTF"):
                 reasons.append("cash: needs %s (%s + %s charges) but only %s cash; that would be margin"
                                % (inr(value + charges), inr(value), inr(charges), inr(cash)))
@@ -402,6 +412,7 @@ def check(orders, cfg, portfolio=None, prices=None, details=None, state=None, to
                 acct["shares"][sym] = held + q
             else:
                 acct["cash"] += value - charges
+                sell_credit.append((i, value - charges))
                 acct["values"][sym] = max(acct["values"].get(sym, 0.0) - q * mark, 0.0)
                 acct["shares"][sym] = held - q
                 sold_today.add(sym)
@@ -409,7 +420,10 @@ def check(orders, cfg, portfolio=None, prices=None, details=None, state=None, to
             "index": i, "symbol": sym, "exchange": exch, "side": side, "quantity": qty, "order_type": typ,
             "price": price, "value_inr": round(value, 2) if value is not None else None,
             "est_charges": round(charges, 2), "fingerprint": fingerprint(o), "verdict": verdict,
-            "reasons": reasons, "warnings": warns,
+            "reasons": reasons, "warnings": warns + (["passes only with the cash from SELL order(s) %s, which "
+                                                      "india-broker places first" % ", ".join(map(str, needs_sells))]
+                                                     if needs_sells and verdict == "PASS" else []),
+            "needs_sells": needs_sells if verdict == "PASS" else [],
         })
 
     return {"date": today, "paper": bool(c.get("paper", True)), "results": results,

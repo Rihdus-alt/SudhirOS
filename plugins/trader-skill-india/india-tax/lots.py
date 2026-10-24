@@ -52,6 +52,7 @@ adds the cess). It ignores the basic exemption limit and rebates.
 import argparse
 import datetime
 import json
+import math
 import os
 import sys
 
@@ -215,7 +216,8 @@ def simulate_sale(lots, shares, price, sold, sell_charges=0.0):
         actual = l["per_share"] * take
         tm = term(l["date"], sold)
         cost = grandfathered_cost(actual, take, l["fmv"], price * take, l["date"]) if tm == "long" else actual
-        used.append({"id": l["id"], "acquired": l["date"].isoformat(), "kind": l["kind"], "shares": round(take, 6),
+        used.append({"id": l["id"], "seq": l.get("seq"), "acquired": l["date"].isoformat(), "kind": l["kind"],
+                     "shares": round(take, 6),
                      "cost": round(cost, 2), "actual_cost": round(actual, 2), "proceeds": round(proceeds, 2),
                      "gain": round(proceeds - cost, 2), "term": tm,
                      "grandfathered": cost > actual + 0.005})
@@ -393,24 +395,63 @@ def harvest(portfolio, prices, today, realized, carried=None, min_loss=1000.0, s
     return {"fy": year, "losses": losses, "gains": gains}
 
 
-def harvest_orders(h, include_gains=True):
-    out = []
-    for c in h["losses"]:
-        out.append({"variety": "regular", "exchange": "NSE", "tradingsymbol": c["ticker"], "transaction_type": "SELL",
-                    "quantity": int(round(c["shares"])), "product": "CNC", "order_type": "MARKET", "validity": "DAY",
-                    "why": ("tax-loss harvest: sell %s (lots %s, FIFO) to book an estimated %s loss; buy back on or "
-                            "after %s, never the same day. Not tax advice."
-                            % (fmt_qty(c["shares"]), ", ".join(c["lots"]), inr(c["loss"]), c["rebuy_from"]))})
-    if include_gains:
-        for c in h["gains"]:
-            out.append({"variety": "regular", "exchange": "NSE", "tradingsymbol": c["ticker"],
-                        "transaction_type": "SELL", "quantity": int(round(c["shares"])), "product": "CNC",
-                        "order_type": "MARKET", "validity": "DAY",
-                        "why": ("LTCG exemption harvest: sell %s (lots %s, FIFO) to book about %s of long-term gain "
-                                "inside this year's s.112A exemption, then buy back on or after %s to reset the cost. "
-                                "The new shares start a new 12-month holding period. Not tax advice."
-                                % (fmt_qty(c["shares"]), ", ".join(c["lots"]), inr(c["ltcg"]), c["rebuy_from"]))})
+def _limit_price(price, buf):
+    """A sell limit buf% under the last price on NSE's tick grid (india-budget's rule, when it is installed)."""
+    path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "india-budget", "size.py")
+    if os.path.exists(path):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("india_size", path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod.limit_price(price, "sell", buf, None)
+    return math.floor(price * (1 - buf / 100.0) * 20 + EPS) / 20.0
+
+
+def harvest_orders(h, include_gains=True, cfg=None, portfolio=None, today=None):
+    """Sell proposals for the harvest candidates, in india-risk's terms: a LIMIT (unless the config says
+    MARKET) and no bigger than max_order_inr at that limit. A capped FIFO prefix is simulated again and kept
+    only if it still books a loss (a loss harvest) or only long-term gain (an exemption harvest)."""
+    cfg = cfg or {}
+    max_o = float(cfg.get("max_order_inr") or 0)
+    limit = str(cfg.get("order_type", "LIMIT")).upper() == "LIMIT"
+    buf = float(cfg.get("limit_buffer_pct", 0.5) or 0)
+    lots = lots_of(portfolio) if portfolio else {}
+    cands = [("loss", c) for c in h["losses"]] + ([("gain", c) for c in h["gains"]] if include_gains else [])
+    out, notes = [], []
+    for kind, c in cands:
+        t, q, px = c["ticker"], int(round(c["shares"])), float(c["price"])
+        lp = _limit_price(px, buf) if limit else px
+        cut = ""
+        if max_o and q * lp > max_o + EPS:
+            q2 = int(max_o // lp)
+            sale = simulate_sale(lots[t], q2, px, today, estimate_sell_charges(q2 * px)) \
+                if (q2 > 0 and lots.get(t) and today) else None
+            if not sale or (kind == "loss" and sale["gain"] >= 0) or (kind == "gain" and abs(sale["short"]) > EPS):
+                notes.append("%s: within your %s max order the FIFO sale no longer books %s; not proposed"
+                             % (t, inr(max_o), "a loss" if kind == "loss" else "only long-term gain"))
+                continue
+            cut = " Cut from %d to %d shares by your %s max order; sell the rest on a later day." % (q, q2, inr(max_o))
+            notes.append("%s: cut from %d to %d shares by your %s max order" % (t, q, q2, inr(max_o)))
+            q = q2
+        if kind == "loss":
+            why = ("tax-loss harvest: sell %s (lots %s, FIFO) to book an estimated %s loss; buy back on or "
+                   "after %s, never the same day. Not tax advice." % (fmt_qty(c["shares"]), ", ".join(c["lots"]),
+                                                                      inr(c["loss"]), c["rebuy_from"]))
+        else:
+            why = ("LTCG exemption harvest: sell %s (lots %s, FIFO) to book about %s of long-term gain "
+                   "inside this year's s.112A exemption, then buy back on or after %s to reset the cost. "
+                   "The new shares start a new 12-month holding period. Not tax advice."
+                   % (fmt_qty(c["shares"]), ", ".join(c["lots"]), inr(c["ltcg"]), c["rebuy_from"]))
+        o = {"variety": "regular", "exchange": "NSE", "tradingsymbol": t, "transaction_type": "SELL", "quantity": q,
+             "product": "CNC", "order_type": "LIMIT" if limit else "MARKET", "validity": "DAY", "why": why + cut}
+        if limit:
+            o["price"] = lp
+        out.append(o)
+    harvest_orders.notes = notes
     return out
+
+
+harvest_orders.notes = []
 
 
 # ---------------------------------------------------------------- corporate actions, recording
@@ -425,27 +466,30 @@ def _ratio(text):
     return a, b
 
 
-def apply_bonus(portfolio, ticker, ratio, when):
-    """Bonus "N:H" (N new shares for every H held, the way companies announce it):
-    a new zero-cost lot dated the allotment day."""
+def apply_bonus(portfolio, ticker, ratio, when, allotted=None):
+    """Bonus "N:H" (N new shares for every H held, the way companies announce it). when: the ex-date (the record
+    date under T+1): shares bought on or after it are not entitled. The new zero-cost lot is dated the allotment
+    day (allotted, default the ex-date), which starts its holding period."""
     a, b = _ratio(ratio)
     t = norm(ticker)
+    allotted = allotted or when
     for p in portfolio.get("positions", []):
         if norm(p.get("ticker") or p.get("symbol")) != t:
             continue
-        held = sum(float(l["shares"]) for l in p.get("lots", []) if day(l["date"]) <= when)
+        held = sum(float(l["shares"]) for l in p.get("lots", []) if day(l["date"]) < when)
         extra = int(held * a / b + EPS)
         if extra <= 0:
             raise TaxError("no %s shares held on %s to earn a bonus" % (t, when))
-        p["lots"].append({"id": "%s-B%s" % (t, when.strftime("%Y%m%d")), "date": when.isoformat(), "shares": extra,
-                          "cost": 0.0, "kind": "bonus"})
+        p["lots"].append({"id": "%s-B%s" % (t, allotted.strftime("%Y%m%d")), "date": allotted.isoformat(),
+                          "shares": extra, "cost": 0.0, "kind": "bonus", "ex_date": when.isoformat()})
         p["shares"] = round(float(p.get("shares", 0)) + extra, 6)
         return extra
     raise TaxError("no %s in the portfolio" % t)
 
 
 def apply_split(portfolio, ticker, ratio, when):
-    """A old shares become B new: every lot's shares x B/A, cost and date unchanged; FMV per share / (B/A)."""
+    """A old shares become B new: every lot's shares x B/A, cost and date unchanged; FMV per share / (B/A).
+    when: the ex-date; a lot bought on or after it was bought at the post-split price and is left alone."""
     a, b = _ratio(ratio)
     t = norm(ticker)
     f = b / a
@@ -453,7 +497,7 @@ def apply_split(portfolio, ticker, ratio, when):
         if norm(p.get("ticker") or p.get("symbol")) != t:
             continue
         for l in p.get("lots", []):
-            if day(l["date"]) <= when:
+            if day(l["date"]) < when:
                 l["shares"] = round(float(l["shares"]) * f, 6)
                 if l.get("fmv_2018_01_31") is not None:
                     l["fmv_2018_01_31"] = round(float(l["fmv_2018_01_31"]) / f, 4)
@@ -464,7 +508,10 @@ def apply_split(portfolio, ticker, ratio, when):
 
 def record_sale(portfolio, ticker, sale, price, state):
     t = norm(ticker)
-    taken = {u["id"]: u for u in sale["lots"]}
+    # match the lots a sale used by their position in the portfolio (lots_of's seq), not by id: two lots can
+    # carry the same id in a hand-edited or older portfolio, and cutting both would lose shares
+    by_seq = all(u.get("seq") for u in sale["lots"])
+    taken = {(u["seq"] if by_seq else u["id"]): u for u in sale["lots"]}
     for p in portfolio.get("positions", []):
         if norm(p.get("ticker") or p.get("symbol")) != t:
             continue
@@ -472,9 +519,10 @@ def record_sale(portfolio, ticker, sale, price, state):
         for i, l in enumerate(p.get("lots", []), 1):
             lid = l.get("id") or "%s-%d" % (t, i)
             l["id"] = lid
-            if lid in taken:
+            key = i if by_seq else lid
+            if key in taken:
                 sh = float(l["shares"])
-                take = taken[lid]["shares"]
+                take = taken[key]["shares"]
                 l["cost"] = round(float(l["cost"]) * (1 - take / sh), 2) if sh else 0.0
                 l["shares"] = round(sh - take, 6)
             if float(l["shares"]) > EPS:
@@ -621,6 +669,8 @@ def cmd_sell(a):
         print(NOT_ADVICE)
     if a.record:
         portfolio, state = record_sale(portfolio, t, sale, float(price), state)
+        stt = a.stt if a.stt is not None else float(round(0.001 * float(a.shares) * float(price)))
+        portfolio["cash"] = round(float(portfolio["cash"]) - stt, 2)   # the proceeds above exclude STT
         write_json(a.portfolio, portfolio)
         write_json(a.state, state)
         if not a.json:
@@ -655,7 +705,8 @@ def cmd_harvest(a):
     portfolio, prices, state, today = _inputs(a)
     h = harvest(portfolio, prices, today, state.get("realized"), _carried(state, today), a.min_loss,
                 a.sell_cost_pct, not a.no_gains)
-    props = harvest_orders(h, not a.no_gains)
+    cfg = read_json(a.config, "config", required=False) or {}
+    props = harvest_orders(h, not a.no_gains, cfg, portfolio, today)
     if a.write and props:
         write_json(a.write, {
             "created_by": "india-tax", "created_at": datetime.datetime.now().replace(microsecond=0).isoformat(),
@@ -682,6 +733,8 @@ def cmd_harvest(a):
         print("GAIN  %-12s sell %s (lots %s) at %s: books %s LTCG inside the exemption, tax-free; re-buy from %s "
               "to raise your cost" % (c["ticker"], fmt_qty(c["shares"]), ", ".join(c["lots"]), inr(c["price"]),
                                      inr(c["ltcg"]), c["rebuy_from"]))
+    for n in harvest_orders.notes:
+        print("NOTE: " + n)
     print("Re-buy on the next trading day at the earliest (a same-day sell and buy is netted into an intraday "
           "trade). Harvesting only to create a loss can be questioned under the anti-avoidance rules; book it as a "
           "real sale. Charges (about %.2f%% a side) are counted in these numbers." % a.sell_cost_pct)
@@ -695,8 +748,9 @@ def cmd_action(a):
     portfolio = read_json(a.portfolio, "portfolio (lots)")
     when = day(a.date)
     if a.cmd == "bonus":
-        extra = apply_bonus(portfolio, a.ticker, a.ratio, when)
-        msg = "Added %d bonus shares of %s dated %s at zero cost." % (extra, norm(a.ticker), when)
+        allotted = day(a.allotment) if a.allotment else when
+        extra = apply_bonus(portfolio, a.ticker, a.ratio, when, allotted)
+        msg = "Added %d bonus shares of %s dated %s at zero cost." % (extra, norm(a.ticker), allotted)
     else:
         total = apply_split(portfolio, a.ticker, a.ratio, when)
         msg = "Split %s %s: now %s shares, same cost and purchase dates." % (norm(a.ticker), a.ratio, fmt_qty(total))
@@ -730,6 +784,7 @@ def main(argv=None):
     p.add_argument("--charges", type=float, help="sell-side charges except STT, from the contract note "
                                                  "(default: estimated with india-costs)")
     p.add_argument("--record", action="store_true")
+    p.add_argument("--stt", type=float, help="STT on the sale, from the contract note (default 0.1%%, rounded)")
     p = sub.add_parser("fy", help="this financial year: set-off, exemption, estimated tax")
     common(p)
     p.add_argument("--fy", help="the starting year, e.g. 2025 for FY 2025-26")
@@ -738,13 +793,18 @@ def main(argv=None):
     p.add_argument("--min-loss", type=float, default=1000.0)
     p.add_argument("--sell-cost-pct", type=float, default=0.12, help="charges per side as %% of value")
     p.add_argument("--no-gains", action="store_true", help="skip LTCG exemption harvesting")
+    p.add_argument("--config", default="trader/config.json", help="max_order_inr, order_type, limit_buffer_pct")
     p.add_argument("--write", nargs="?", const="trader/orders.json", metavar="PATH")
     for name in ("bonus", "split"):
         p = sub.add_parser(name, help="record a %s" % name)
         p.add_argument("ticker")
         p.add_argument("--ratio", required=True,
                        help="bonus new:held as announced (1:1, 1:2); split old:new shares (1:5 for 10 -> 2 face value)")
-        p.add_argument("--date", required=True, help="allotment / record date YYYY-MM-DD")
+        p.add_argument("--date", required=True, help="ex-date YYYY-MM-DD (the record date under T+1): shares "
+                       "bought on or after it are not entitled")
+        if name == "bonus":
+            p.add_argument("--allotment", help="allotment date YYYY-MM-DD, which dates the bonus lot (default: "
+                           "--date)")
         p.add_argument("--portfolio", default="trader/portfolio.json")
         p.add_argument("--dry-run", action="store_true")
     a = ap.parse_args(argv)

@@ -458,7 +458,9 @@ def cmd_new(a):
     if os.path.exists(a.state):
         with open(a.state, encoding="utf-8") as fh:
             state = json.load(fh)
-    seen = set(state.get("seen", []))
+    # seen: {key: first day it was seen}, pruned by age; an older list state is carried over as seen today
+    raw = state.get("seen", {})
+    seen = dict(raw) if isinstance(raw, dict) else {k: to.isoformat() for k in raw}
     mine = holdings(a.portfolio) if a.watch_holdings else set()
     investors = []
     if a.investors and os.path.exists(a.investors):
@@ -477,7 +479,7 @@ def cmd_new(a):
                 r["kind"] in ("pledge created", "pledge invoked") and r["symbol"] in mine
             if interesting:
                 alerts.append(("insider", r))
-            seen.add(k)
+            seen.setdefault(k, to.isoformat())
     except InsiderError as e:
         errors.append(str(e))
     for kind in ("bulk", "block"):
@@ -488,7 +490,7 @@ def cmd_new(a):
                     continue
                 if r["symbol"] in mine or (investors and match_client(r["client"], investors)):
                     alerts.append(("deal", r))
-                seen.add(k)
+                seen.setdefault(k, to.isoformat())
         except InsiderError as e:
             errors.append(str(e))
     if not a.dry_run:
@@ -496,8 +498,11 @@ def cmd_new(a):
         if d:
             os.makedirs(d, exist_ok=True)
         with open(a.state, "w", encoding="utf-8") as fh:
-            json.dump({"seen": sorted(seen)[-20000:], "last_check": datetime.datetime.now().replace(microsecond=0).isoformat()},
-                      fh, indent=1)
+            # keep what the look-back window can still return, plus a margin; sorting the keys and keeping the last
+            # 20,000 kept whichever sorted last, so a full state reported the same filings as new on every run
+            cutoff = (to - datetime.timedelta(days=a.days + 60)).isoformat()
+            json.dump({"seen": {k: v for k, v in sorted(seen.items()) if v >= cutoff},
+                       "last_check": datetime.datetime.now().replace(microsecond=0).isoformat()}, fh, indent=1)
     if a.json:
         print(json.dumps({"alerts": [dict(r, type=t) for t, r in alerts], "errors": errors}, indent=2, ensure_ascii=False))
     else:

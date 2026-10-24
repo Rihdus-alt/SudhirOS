@@ -201,8 +201,17 @@ def plan(portfolio, prices, weights, cfg, band=None, sell_untracked=False, detai
         else:
             row["action"] = "hold (one share would overshoot)"
 
+    slip = float(c.get("market_slippage_pct", 0.5) or 0)
+
+    def at(t, side):
+        """The price india-risk values the order at: its limit, or the last price plus or minus slippage."""
+        if limit:
+            return sizing.limit_price(prices[t], side, lbuf, details.get(t))
+        return prices[t] * (1 + slip / 100.0 if side == "buy" else 1 - slip / 100.0)
+
     def worth(t, q, side):
-        v = q * prices[t]
+        # a sell brings in its limit price, not the last price: credit it at that, as india-risk does
+        v = q * (at(t, side) if side == "sell" else prices[t])
         ch = costs.trade_costs(side, v, exch, "CNC", rates)["total"]
         return v, ch
 
@@ -210,8 +219,8 @@ def plan(portfolio, prices, weights, cfg, band=None, sell_untracked=False, detai
     cash_after = cash
     for s in sells:
         t, q = s["ticker"], s["qty"]
-        if max_o and q * prices[t] > max_o + EPS:
-            q = int(max_o // prices[t])
+        if max_o and q * at(t, "sell") > max_o + EPS:
+            q = int(max_o // at(t, "sell"))
             notes.append("%s sell cut to your %s max order; run again after it fills" % (t, inr(max_o)))
         v, ch = worth(t, q, "sell")
         if q <= 0 or v < min_o - EPS:
@@ -239,8 +248,8 @@ def plan(portfolio, prices, weights, cfg, band=None, sell_untracked=False, detai
     for b in buys:
         t = b["ticker"]
         q = int(math.floor(b["qty"] * scale + EPS))
-        if max_o and q * prices[t] > max_o + EPS:
-            q = int(max_o // prices[t])
+        if max_o and q * at(t, "buy") > max_o + EPS:
+            q = int(max_o // at(t, "buy"))
             notes.append("%s buy cut to your %s max order; run again after it fills" % (t, inr(max_o)))
         v, ch = worth(t, q, "buy")
         if q < 1 or v < min_o - EPS:

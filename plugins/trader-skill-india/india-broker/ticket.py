@@ -57,6 +57,13 @@ BATCH_WORDS = {"all", "every", "everything", "rest", "remaining", "them", "both"
                "sab", "sabhi", "saare", "sare"}
 DOUBT_WORDS = {"no", "not", "dont", "don't", "wait", "cancel", "stop", "but", "maybe", "later", "hold",
                "unless", "if", "nahi", "nahin", "mat", "ruko", "lekin", "shayad"}
+# a yes may carry only these words besides the order's own symbol, side and numbers: anything else ("never
+# mind", "skip", "rehne do", another stock) makes it something other than a plain yes, so ask again
+OK_WORDS = set(YES_FIRST) | {"ji", "please", "pls", "go", "ahead", "place", "it", "do", "kar", "karo", "confirm",
+                             "confirmed", "ok", "okay", "shares", "share", "lot", "lots", "at", "rs", "inr", "order",
+                             "this", "one", "for", "of", "on", "nse", "bse", "nfo", "bfo", "limit", "the", "a",
+                             "qty", "price", "trigger"}
+SIDE_WORDS = {"BUY": {"buy", "kharido", "kharid", "lo", "le", "lelo"}, "SELL": {"sell", "becho", "bech", "bechdo"}}
 BROKERS = {"manual": "your broker's app (you place it yourself)", "kite": "Zerodha Kite (Kite MCP connector)",
            "other": "your broker's MCP connector"}
 
@@ -165,6 +172,12 @@ def amount_numbers(order):
                 nums.append(float(order[k]))
             except (TypeError, ValueError):
                 pass
+    try:
+        lot = int(order.get("lot_size") or 0)
+        if lot and int(order["quantity"]) % lot == 0:
+            nums.append(float(int(order["quantity"]) // lot))   # "yes, 2 lots"
+    except (KeyError, TypeError, ValueError):
+        pass
     return nums
 
 
@@ -189,10 +202,16 @@ def parse_yes(reply, order, batch_symbols=()):
     named = tokens & others
     if named:
         return False, "the reply names %s, but this order is for %s" % (", ".join(sorted(named)), sym)
+    side = str(order.get("transaction_type", "")).upper()
+    allowed = OK_WORDS | SIDE_WORDS.get(side, set()) | set(re.findall(r"[a-z]+", sym.lower()))
+    odd = [w for w in re.findall(r"[a-z]+", raw.lower()) if w not in allowed]
+    if odd or words.count(first) > 1:
+        return False, "the reply has words that are not a plain yes for %s (%s); ask again" % (
+            plain(order), ", ".join(odd) or first)
     nums = [float(n.replace(",", "")) for n in re.findall(r"\d[\d,]*(?:\.\d+)?", raw)]
     if nums:
         want = amount_numbers(order)
-        if not any(abs(n - w) < 0.005 for n in nums for w in want):
+        if not all(any(abs(n - w) < 0.005 for w in want) for n in nums):
             return False, "the reply says %s, but this order is %s" % (
                 ", ".join(("%g" % n) for n in nums), plain(order))
     return True, "explicit yes for %s" % plain(order)
@@ -230,6 +249,12 @@ def status_of(order, risk, state, today):
         return False, "NOT READY: " + why, None
     if rv.get("verdict") != "PASS":
         return False, "BLOCKED by india-risk: " + "; ".join(rv.get("reasons", [])), rv
+    by_index = {r.get("index"): r for r in (risk or {}).get("results", [])}
+    for k in rv.get("needs_sells") or []:
+        dep = latest(state, (by_index.get(k) or {}).get("fingerprint"), today)
+        if not dep or dep.get("status") != "placed":
+            return False, ("NOT READY: india-risk passed this buy only with the cash from SELL order %d, which is "
+                           "not placed yet; do that sell first" % k), rv
     rec = latest(state, fp, today)
     if rec:
         st = rec.get("status")
@@ -333,7 +358,10 @@ def apply_fill(portfolio_path, cfg, symbol, side, qty, price, date, charges=None
     if charges is None:
         c = costs.trade_costs(side.lower(), value, exchange, "CNC", costs.rates_from(cfg))
         charges, stt = c["total"], c["stt"]
-    stt = float(stt or 0)
+    if stt is None:
+        # STT is not a cost of acquisition or a transfer expense: it must not ride along inside the charges
+        stt = costs.trade_costs(side.lower(), value, exchange, "CNC", costs.rates_from(cfg))["stt"]
+    stt = float(stt)
     charges = float(charges)
     pos = None
     for p in pf.setdefault("positions", []):
@@ -344,7 +372,10 @@ def apply_fill(portfolio_path, cfg, symbol, side, qty, price, date, charges=None
             pos = {"ticker": symbol, "shares": 0, "lots": []}
             pf["positions"].append(pos)
         lots = pos.setdefault("lots", [])
-        lots.append({"id": "%s-%d" % (symbol, len(lots) + 1), "date": date, "shares": int(qty),
+        # a FIFO sale removes the oldest lots, so len(lots) + 1 can name a lot that still exists
+        used = [int(str(l.get("id", "")).rsplit("-", 1)[1]) for l in lots
+                if str(l.get("id", "")).startswith(symbol + "-") and str(l.get("id", "")).rsplit("-", 1)[1].isdigit()]
+        lots.append({"id": "%s-%d" % (symbol, max(used + [len(lots)]) + 1), "date": date, "shares": int(qty),
                      "cost": round(value + charges - stt, 2), "price": price,
                      "charges": round(charges, 2), "stt": round(stt, 2)})
         pos["shares"] = int(round(float(pos.get("shares", 0)) + qty))
@@ -473,10 +504,12 @@ def cmd_result(a):
     print("Recorded order %d as %s." % (a.index, a.status))
     if a.status == "placed" and a.filled_qty and a.filled_price:
         pf, _ = apply_fill(a.portfolio, cfg, rec["symbol"], rec["side"], a.filled_qty, a.filled_price, today,
-                           exchange=order.get("exchange", "NSE"))
+                           a.charges, a.stt, exchange=order.get("exchange", "NSE"), lot_size=order.get("lot_size"))
         write_json(a.portfolio, pf)
-        print("Added the fill to %s (charges estimated; correct them from the contract note with ticket.py fill)."
-              % a.portfolio)
+        print("Added the fill to %s (charges %s). This fill is now recorded: do NOT also run ticket.py fill for "
+              "this order, or it is counted twice." % (a.portfolio, "from the contract note" if a.charges is not None
+                                                        else "estimated; pass --charges and --stt from the contract "
+                                                             "note next time to record them exactly"))
     elif a.status == "placed":
         print("When it fills, record it from the contract note: ticket.py fill --symbol %s --side %s --qty Q "
               "--price P --charges C --stt S" % (rec["symbol"], rec["side"]))
@@ -582,6 +615,8 @@ def main(argv=None):
     p.add_argument("--note")
     p.add_argument("--filled-qty")
     p.add_argument("--filled-price")
+    p.add_argument("--charges", type=float, help="total charges from the contract note (with --filled-qty)")
+    p.add_argument("--stt", type=float, help="the STT in those charges")
     p.add_argument("--portfolio", default="trader/portfolio.json")
     p = sub.add_parser("paper-fill")
     common(p)

@@ -69,7 +69,9 @@ not lots; that is not enough for FIFO.
   years, only if the return is filed on time.
 - **Bonus and split**: bonus shares cost zero and are held from the allotment
   date. A split keeps the original cost and dates. `bonus` and `split` update
-  the lots; then refresh prices.
+  the lots; `--date` is the ex-date (the record date under T+1), so shares
+  bought on or after it are not entitled; `bonus --allotment` dates the new
+  lot. Then refresh prices.
 - **Bonus stripping (s.94(8))**: shares bought up to 3 months before a bonus
   and sold at a loss within 9 months after it: the loss is ignored. `sell`
   warns.

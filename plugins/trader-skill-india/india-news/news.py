@@ -217,8 +217,10 @@ def touches(item, names):
     text = (" %s %s " % (item["title"], item.get("detail", ""))).lower()
     hit = {item["symbol"]} if (item.get("symbol") and item["kind"] == "filing") else set()
     for sym, name in names.items():
-        short = re.sub(r"\s+", " ", re.sub(r"\b(limited|ltd\.?|industries|india)\b", "", (name or "").lower())).strip()
-        if re.search(r"\b%s\b" % re.escape(sym.lower()), text) or (len(short) > 3 and short in text):
+        # strip only the legal suffix: "Bank of India" minus "india" is "bank of", which every bank headline has
+        short = re.sub(r"\s+", " ", re.sub(r"\b(limited|ltd\.?)", "", (name or "").lower())).strip(" .")
+        if re.search(r"\b%s\b" % re.escape(sym.lower()), text) or \
+                (len(short) > 3 and re.search(r"(?<!\w)%s(?!\w)" % re.escape(short), text)):
             hit.add(sym)
     return sorted(h for h in hit if h)
 
@@ -322,15 +324,17 @@ def run(a):
     dedup, keyed, twins = [], {}, []
     for it in sorted(out, key=lambda x: (x["time"], x["source"]), reverse=True):
         k = (it["kind"], it["symbol"], re.sub(r"\W+", "", it["title"].lower())[:60], it["time"][:13])
-        if it["kind"] == "filing" and k in keyed:
-            keyed[k]["also_on"] = it["source"]
+        # the other exchange's copy can arrive a run later, after the first one was shown: remember the key
+        if it["kind"] == "filing" and (k in keyed or (not a.all and "twin|%s|%s|%s|%s" % k in seen)):
+            if k in keyed:
+                keyed[k]["also_on"] = it["source"]
             twins.append(it["id"])
             continue
         keyed[k] = it
         dedup.append(it)
     if not a.dry_run:
         stamp = now.strftime("%Y-%m-%dT%H:%M:%SZ")
-        for i in [it["id"] for it in dedup] + twins:
+        for i in [it["id"] for it in dedup] + twins + ["twin|%s|%s|%s|%s" % k for k in keyed if k[0] == "filing"]:
             seen[i] = stamp
         old = (now - datetime.timedelta(days=30)).strftime("%Y-%m-%dT%H:%M:%SZ")
         seen = {k: v for k, v in seen.items() if v >= old}
