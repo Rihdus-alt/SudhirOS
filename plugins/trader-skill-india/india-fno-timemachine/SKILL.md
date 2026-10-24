@@ -59,7 +59,8 @@ india-fno-plan's `trail` and the backtest, held to it by the tests):
 
 - the stop is checked first when a bar touches both levels;
 - a gap through the stop fills at the open;
-- TP1 books `tp1_exit_fraction`, but with `--lots 1` nothing can be booked, so the whole position trails;
+- TP1 books `tp1_exit_fraction` in whole lots, as india-fno-plan's TP1 order is written (3 lots book 1, 5 book 2). One lot cannot be split, so the planner's TP1 order takes the whole lot out, and so does the Time Machine; `--trail-whole` trails it instead;
+- `--entry` is a DAY limit order: it fills at the open if the open is better, inside the session if the session reaches it (a target touched in that session does not count), and otherwise it is "no fill";
 - after TP1 the stop moves to entry, then a chandelier trail that only tightens;
 - the time stop applies before TP1;
 - each run has a horizon, and the option's expiry is a second horizon.
@@ -69,8 +70,10 @@ india-fno-plan's `trail` and the backtest, held to it by the tests):
 | outcome | meaning |
 | --- | --- |
 | no entry | the next open is already past the stop or TP1: the order is not taken |
+| no fill | (`--entry`) the session never reached the limit |
 | stop-loss before TP1 | the full loss; the line under it shows how often the open gapped through the stop (worse than planned) |
 | time stop | no TP1 within `time_stop_bars`: out at that close |
+| TP1: the whole position out | (one lot) the TP1 order takes it all |
 | TP1, then stopped at entry | TP1 reached, the rest came back to entry |
 | TP1, then trailed out | TP1 reached, the rest trailed out before TP2 |
 | TP2, then trailed out | TP2 reached, the rest trailed out |
@@ -79,7 +82,7 @@ india-fno-plan's `trail` and the backtest, held to it by the tests):
 
 For each outcome the tool reports:
 
-- the probability, with its 95% interval: Wilson for the replay, Monte Carlo standard error for the simulations;
+- the probability, with its 95% interval in brackets: Wilson for the replay, Monte Carlo standard error for the simulations;
 - the average R and the average time in the trade.
 
 Then, overall:
@@ -105,10 +108,21 @@ The strike comes from india-fno-plan's rule: near 0.55 delta, liquid. Along ever
 - the futures basis shrinking to zero at expiry;
 - intrinsic value at expiry.
 
-Prices are set so that the entry fills at the ask the chain shows. Exits are
-valued at the session's close, a little more decay than an intraday exit. A
-change in IV (vega) is not modelled: if IV is likely to fall, say so, and
-replay with `--iv`.
+Prices are set so that the entry fills at the ask the chain shows. Before
+expiry, every exit sells at the bid, so the whole spread is paid. Exits are
+valued at the session's close, which counts a little more decay than an
+intraday exit. The basis is held constant along a path, so the forward moves
+one for one with the index, and neither leg gains from the basis converging.
+The implied paths run on the calendar clock the IV is quoted on: a weekend
+carries three days of variance.
+
+IV changes (vega) are not part of the default run. `--iv X` covers them:
+
+- the option is still bought at the chain's quote;
+- it is valued at X% whenever it is sold;
+- the implied paths run at X%.
+
+Use it to replay an IV crush or spike.
 
 ## Steps
 
@@ -117,7 +131,8 @@ replay with `--iv`.
 2. Fetch candles and, for options, a chain whose expiry outlives the trade
    (see the "still held at expiry" line).
 3. Run it. If no setup fired and the user has no direction, say so: do not
-   invent a trade.
+   invent a trade. The tool refuses intraday candles, a chain for another
+   underlying, and a chain that expires before the entry.
 4. Report in this order:
    - any NOT WORTH IT note;
    - the outcome table, method by method;
@@ -136,15 +151,15 @@ replay with `--iv`.
 TIME MACHINE  NIFTY SHORT [trend_pullback] on the 2026-10-19 close, entry Rs 22,888.95
   SL 23,301.25 (412.30 points, 1.50 ATR) | TP1 22,476.65 (1R) | TP2 22,064.36 (2R)
   option leg: 20261027 22950 PE at 198.65 (5 sessions to expiry), lot 65
-How it ends                       replay 10 (3 ind.)   every bar 183   bootstrap (5000)   implied IV (5000)
-  stop-loss before TP1              0.0%                22.4%           37.3%              39.1%
-  TP2, then trailed out            40.0%                27.3%           20.8%              17.5%
-  expectancy per trade            +0.838R             +0.131R          -0.021R +/-0.027   -0.052R +/-0.026
-  option: still held at expiry                                          57.7%              64.6%
+How it ends (95% interval)        replay 10 (3 ind.)    every bar 183         bootstrap (5000)      implied IV (5000)
+  stop-loss before TP1              0.0% (0-28)          22.4% (17-29)         37.3% (36-39)         38.0% (37-39)
+  TP2, then trailed out            40.0% (17-69)         27.3% (21-34)         20.8% (20-22)         16.6% (16-18)
+  expectancy per trade            +0.597R +/-0.425      +0.244R +/-0.142      -0.021R +/-0.027      -0.055R +/-0.026
+  option: still held at expiry                                                57.7%                 59.9%
 ```
 
 Read it as: ten past occurrences, only three of them independent, which is
-too few to mean anything. The bootstrap from this chart's own days finds no
+too few to mean anything (the interval runs from 17% to 69%). The bootstrap from this chart's own days finds no
 edge, and the option-implied paths find a small loss after costs. With five
 sessions left, the October option would usually still be held at expiry:
 use the next month's chain.

@@ -173,8 +173,12 @@ class Instruments(unittest.TestCase):
         leg = tm.OptionLeg(op, chain, sessions, CLOSE, k)
         self.assertAlmostEqual(leg._model(chain["spot"], leg.T0) + leg.offset, op["entry_premium"], places=6)
         self.assertEqual(leg.bars_to_expiry, 5)        # 21, 22, 23, 26 and expiry on the 27th
-        self.assertAlmostEqual(leg.premium(chain["spot"] - 2000, 20), max(op["strike"] - (chain["spot"] - 2000), 0) +
-                               0.0, delta=1.0)
+        # at expiry intrinsic value (the basis held constant along the path); before it, a sell gets the bid
+        self.assertAlmostEqual(leg.premium(chain["spot"] - 2000, 20),
+                               max(op["strike"] - (chain["spot"] - 2000 + leg.basis), 0), delta=1e-6)
+        mid_like = leg._model(chain["spot"], leg.Ts[0]) + leg.offset
+        self.assertAlmostEqual(leg.premium(chain["spot"], 0), mid_like - leg.spread, places=6)
+        self.assertGreater(leg.spread, 0)
 
     def test_cli_text_json_grid_equity_and_errors(self):
         code, out, err = run(["--candles", NIFTY, "--chain", CHAIN, "--now", "2026-10-19T15:30", "--paths", "800",
@@ -201,6 +205,68 @@ class Instruments(unittest.TestCase):
                             "--config", "/nonexistent"])
         self.assertEqual(code, 1)
         self.assertIn("wrong side", err)
+
+    def test_limit_entries_fill_only_when_reached(self):
+        k = f.cfg_with({})
+        t = {"direction": "long", "stop": 950.0, "tp1": 1050.0, "tp2": 1100.0, "risk": 40.0, "frac": 0.5,
+             "limit": 990.0}
+        filled = tm.run_trade([(1000, 1060, 985, 1040, 10)] + [(1040, 1045, 1035, 1040, 10)] * 3, t, k, 4)
+        self.assertEqual(filled["entry"], 990.0)
+        self.assertIsNone(filled["tp1_bar"])            # TP1 on the fill session may have come before the fill
+        missed = tm.run_trade([(1000, 1010, 995, 1005, 10)] * 3, t, k, 3)
+        self.assertEqual(missed["cls"], "nofill")
+        better = tm.run_trade([(985, 1000, 980, 995, 10)] * 3, t, k, 3)
+        self.assertEqual(better["entry"], 985)
+
+    def test_tp1_part_follows_the_planner_in_whole_lots(self):
+        c = f.load_candles(NIFTY)
+        for lots, want in ((1, 1.0), (2, 0.5), (3, 1 / 3.0), (5, 0.4)):
+            rep = tm.analyse(c, {}, direction="short", symbol="NIFTY", paths=200, lots=lots, methods=("bootstrap",))
+            self.assertAlmostEqual(rep["trade"]["frac"], want, msg=lots)
+        rep = tm.analyse(c, {}, direction="short", symbol="NIFTY", paths=200, lots=1, methods=("bootstrap",),
+                         trail_whole=True)
+        self.assertEqual(rep["trade"]["frac"], 0.0)
+        k = f.cfg_with({})
+        t = {"direction": "long", "stop": 950.0, "tp1": 1050.0, "tp2": 1100.0, "risk": 50.0, "frac": 1.0}
+        res = tm.run_trade([(1000, 1060, 990, 1055, 10)] * 3, t, k, 3)
+        self.assertEqual((res["cls"], res["exit"], round(res["r"], 6)), ("tp1_all", 1050.0, 1.0))
+
+    def test_replay_measures_each_past_trade_on_its_own_risk(self):
+        c = f.load_candles(NIFTY)
+        rep = tm.analyse(c, {}, direction="short", symbol="NIFTY", paths=200, lots=2, methods=("replay",))
+        k = f.cfg_with({})
+        ind = f.indicators(c, k)
+        tr = tm.trade_from(c, ind, k, "short")
+        occ, _ = tm.replay(c, ind, k, tr, 0.5, 40)
+        cp = rep["trade"]["cost_points"]
+        own = [(r["pts"] - cp * r["entry"] / tr["entry_plan"]) / r["risk"] for r in occ if r["entered"]]
+        self.assertAlmostEqual(rep["methods"]["replay"]["expectancy_r"], sum(own) / len(own), places=3)
+
+    def test_iv_reprices_the_option_and_bad_inputs_are_refused(self):
+        c = f.load_candles(NIFTY)
+        ch = f.parse_chain(CHAIN)
+        base = tm.analyse(c, {}, chain=ch, now_utc=CLOSE, symbol="NIFTY", paths=600, methods=("bootstrap",))
+        crush = tm.analyse(c, {}, chain=f.parse_chain(CHAIN), now_utc=CLOSE, symbol="NIFTY", paths=600,
+                           methods=("bootstrap",), iv=8)
+        self.assertLess(crush["methods"]["bootstrap"]["option_inr_per_lot"]["expectancy"],
+                        base["methods"]["bootstrap"]["option_inr_per_lot"]["expectancy"])
+        late = tm.analyse(c + [dict(c[-1], date="2026-10-28")], {}, chain=f.parse_chain(CHAIN), now_utc=CLOSE,
+                          symbol="NIFTY", paths=200, methods=("bootstrap",))
+        self.assertNotIn("option", late["trade"])
+        self.assertTrue(any("before the entry session" in n for n in late["notes"]))
+        for kw, want in (({"instrument": "option"}, "needs --chain"), ({"horizon": 0}, "at least 1"),
+                         ({"setup": "squeeze", "direction": None}, "did not fire")):
+            args = dict(direction="short", symbol="NIFTY", paths=200, methods=("bootstrap",))
+            args.update(kw)
+            with self.assertRaises(tm.TMError) as e:
+                tm.analyse(c, {}, **args)
+            self.assertIn(want, str(e.exception))
+        with self.assertRaises(tm.TMError):
+            tm.analyse(f.load_candles(REL), {}, chain=f.parse_chain(CHAIN), now_utc=CLOSE, direction="long",
+                       symbol="RELIANCE", paths=200)
+        intraday = [dict(b, date=b["date"] + " 10:15") for b in c]
+        with self.assertRaises(tm.TMError):
+            tm.analyse(intraday, {}, direction="short", paths=200)
 
     def test_custom_levels_keep_their_shape_in_the_replay(self):
         k = f.cfg_with({})

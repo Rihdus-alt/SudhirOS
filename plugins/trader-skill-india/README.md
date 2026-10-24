@@ -124,9 +124,9 @@ everything that can be: the maths, the costs, the rules, and the measurement.
   bootstrap of its real days, the option chain's implied volatility) with
   the same exit engine the planner uses, and counts how each path ends.
   On the NIFTY short of 2026-10-19 (2 lots): stop-loss before TP1 in 37%
-  of bootstrap paths and 39% of implied ones, TP2 in 21% and 18%,
-  expectancy -0.02R and -0.05R after costs, and the 5-session October put
-  still held at expiry in 58-65% of paths.
+  of bootstrap paths and 38% of implied ones, TP2 in 21% and 17%,
+  expectancy -0.02R and -0.06R after costs, and the 5-session October put
+  still held at expiry in 58-60% of paths.
 - **The rules.** Whole lots (NIFTY 65, BANKNIFTY 30 from the 2025 revision;
   the chain's lot size wins), STT 0.05%/0.15% from April 2026, the exchange's
   execution band, expiry on Tuesday (moved earlier for holidays), physical

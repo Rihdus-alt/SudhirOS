@@ -61,8 +61,10 @@ f = _core()
 
 OUTCOMES = (
     ("gap", "no entry: opens past SL or TP1"),
+    ("nofill", "no fill: the limit not reached"),
     ("stop", "stop-loss before TP1"),
     ("time", "time stop: no TP1 in time"),
+    ("tp1_all", "TP1: the whole position out"),
     ("tp1_be", "TP1, then stopped at entry"),
     ("tp1_trail", "TP1, then trailed out"),
     ("tp2_trail", "TP2, then trailed out"),
@@ -81,7 +83,8 @@ class TMError(Exception):
 
 def run_trade(bars, t, k, horizon=None):
     """One path through the exit rules. bars: [(open, high, low, close, atr_before), ...] starting with the
-    session after the signal. t: direction, stop, tp1, tp2, risk (planned), frac (booked at TP1).
+    session after the signal. t: direction, stop, tp1, tp2, risk (planned), frac (booked at TP1; 1.0 exits the
+    whole position there, as the planner's TP1 order does for one lot), limit (optional: a DAY limit entry).
 
     Mirrors fnocore.trail exactly (the tests hold it to that): a bar is checked for the stop before anything
     else, a gap through the stop fills at the open, TP1 moves the stop to entry, the chandelier trail is set on
@@ -93,6 +96,17 @@ def run_trade(bars, t, k, horizon=None):
     if (o0 <= stop or o0 >= tp1) if long_ else (o0 >= stop or o0 <= tp1):
         return {"cls": "gap", "entered": False}
     entry = o0
+    targets_on_bar0 = True
+    lim = t.get("limit")
+    if lim is not None:
+        h0, l0 = bars[0][1], bars[0][2]
+        if (o0 <= lim) if long_ else (o0 >= lim):
+            entry = o0                               # the open is better than the limit: filled there
+        elif (l0 <= lim) if long_ else (h0 >= lim):
+            entry = lim                              # filled inside the session: a target that session may have
+            targets_on_bar0 = False                  # come before the fill, so it does not count; the stop does
+        else:
+            return {"cls": "nofill", "entered": False}
     best = entry
     stage = "open"
     held = 0
@@ -116,8 +130,13 @@ def run_trade(bars, t, k, horizon=None):
             else:
                 cls = "tp2_trail"
             break
+        if n == 0 and not targets_on_bar0:
+            continue
         if stage == "open" and ((h >= tp1) if long_ else (l <= tp1)):
             stage, tp1_bar = "tp1", n
+            if t["frac"] >= 1.0:
+                exit_px, exit_bar, cls = tp1, n, "tp1_all"
+                break
             if (long_ and entry > stop) or ((not long_) and entry < stop):
                 stop = entry
         if stage == "tp1" and ((h >= tp2) if long_ else (l <= tp2)):
@@ -138,7 +157,7 @@ def run_trade(bars, t, k, horizon=None):
     return {"cls": cls, "entered": True, "entry": entry, "exit": exit_px, "exit_bar": exit_bar, "bars": held,
             "tp1_bar": tp1_bar, "tp2_bar": tp2_bar, "gapped_stop": gapped and cls == "stop", "pts": pts,
             "r": pts / risk if risk else 0.0, "mae_r": (sgn * (entry - (lo if long_ else hi))) / risk if risk else 0.0,
-            "mfe_r": (sgn * ((hi if long_ else lo) - entry)) / risk if risk else 0.0}
+            "mfe_r": (sgn * ((hi if long_ else lo) - entry)) / risk if risk else 0.0, "risk": risk}
 
 
 # ---------------------------------------------------------------- reading the chart
@@ -192,10 +211,11 @@ def trade_from(c, ind, k, direction=None, setup=None, entry=None, sl=None, tp1=N
     sigs = f.signals_at(c, ind, i)
     fired = None
     if direction is None:
-        if not sigs:
-            raise TMError("no setup fired on the last bar (%s): pass --direction long|short to replay a trade of "
-                          "your own" % c[i]["date"])
-        fired = max(sigs, key=lambda s: s["score"])
+        cand = [s for s in sigs if setup is None or s["setup"] == setup]
+        if not cand:
+            raise TMError("%s on the last bar (%s): pass --direction long|short to replay a trade of your own"
+                          % ("%s did not fire" % setup if setup else "no setup fired", c[i]["date"]))
+        fired = max(cand, key=lambda s: s["score"])
         direction = fired["direction"]
     else:
         same = [s for s in sigs if s["direction"] == direction and (setup is None or s["setup"] == setup)]
@@ -215,11 +235,16 @@ def trade_from(c, ind, k, direction=None, setup=None, entry=None, sl=None, tp1=N
         raise TMError("targets must lie beyond the entry in the trade's direction, TP2 at or beyond TP1")
     custom = any(x is not None for x in (sl, tp1, tp2))
     a = ind["atr"][i]
-    return {"direction": direction, "setup": (fired or {}).get("setup") if not setup else setup,
+    notes = [] if custom else list(lv["notes"])
+    if setup and not fired:
+        notes.append("%s did not fire on the last bar; its past %s occurrences are replayed anyway" % (setup, direction))
+    limit = float(entry) if entry is not None else None
+    return {"direction": direction, "setup": setup or (fired or {}).get("setup"),
             "why": (fired or {}).get("why"), "date": c[i]["date"], "entry_plan": e, "stop": round(stop, 2),
+            "limit": limit, "limit_atr": ((limit - c[i]["close"]) / a) if (limit is not None and a) else None,
             "tp1": round(t1, 2), "tp2": round(t2, 2), "risk": round(risk, 2), "atr": round(a, 2),
             "stop_atr": risk / a if a else None, "tp1_r": abs(t1 - e) / risk, "tp2_r": abs(t2 - e) / risk,
-            "custom_levels": custom, "notes": lv["notes"] if not custom else [], "ok": lv["ok"] if not custom else True,
+            "custom_levels": custom, "notes": notes, "ok": lv["ok"] if not custom else True,
             "no_edge_p_tp1": f.no_edge_probability(e, stop, t1), "no_edge_p_tp2": f.no_edge_probability(e, stop, t2)}
 
 
@@ -244,14 +269,17 @@ def replay(c, ind, k, tr, frac, horizon, conditioned=True):
                 continue
         a = ind["atr"][i]
         e = c[i]["close"]
+        lim = (e + tr["limit_atr"] * a) if tr.get("limit_atr") is not None else None
+        if lim is not None:
+            e = lim
         if tr["custom_levels"]:
             risk = tr["stop_atr"] * a
             t = {"direction": tr["direction"], "stop": e - sgn * risk, "tp1": e + sgn * tr["tp1_r"] * risk,
-                 "tp2": e + sgn * tr["tp2_r"] * risk, "risk": risk, "frac": frac}
+                 "tp2": e + sgn * tr["tp2_r"] * risk, "risk": risk, "frac": frac, "limit": lim}
         else:
-            lv = f.levels(c, ind, i, tr["direction"], k)
+            lv = f.levels(c, ind, i, tr["direction"], k, entry=lim)
             t = {"direction": tr["direction"], "stop": lv["stop"], "tp1": lv["tp1"], "tp2": lv["tp2"],
-                 "risk": lv["risk_points"], "frac": frac}
+                 "risk": lv["risk_points"], "frac": frac, "limit": lim}
         res = run_trade(bars_from(c, ind, i + 1), t, k, horizon)
         if res["cls"] == "horizon" and res["exit_bar"] < horizon - 1:
             still_open += 1      # the data ran out before the trade could finish: not a result
@@ -323,14 +351,15 @@ def overnight_share(c):
     return gap / (gap + intra) if gap + intra > 0 else 0.2
 
 
-def implied_path(rng, close0, atr0, sigma, phi, n, k):
+def implied_path(rng, close0, atr0, sigma, phi, n, k, dts=None):
     """Risk-neutral daily bars at volatility sigma: an overnight gap, then the session as a Brownian bridge
-    whose maximum and minimum give the high and the low."""
-    dt = 1.0 / TRADING_DAYS
-    vg, vi = sigma * sigma * phi * dt, sigma * sigma * (1 - phi) * dt
+    whose maximum and minimum give the high and the low. dts: the calendar years from each session's close to
+    the next (a weekend is three days), the clock option IVs are quoted on; default 1/252 a session."""
     out, pc, a = [], close0, atr0
     period = k["atr_period"]
-    for _ in range(n):
+    for i in range(n):
+        dt = dts[i] if dts else 1.0 / TRADING_DAYS
+        vg, vi = sigma * sigma * phi * dt, sigma * sigma * (1 - phi) * dt
         g = rng.gauss(0.0, 1.0) * math.sqrt(vg) - 0.5 * vg
         x = rng.gauss(0.0, 1.0) * math.sqrt(vi) - 0.5 * vi
         u1, u2 = 1.0 - rng.random(), 1.0 - rng.random()
@@ -370,31 +399,39 @@ class OptionLeg(object):
     """A bought option repriced with Black-76 along a path: the chain's own IV (sticky strike), time decay on
     the calendar, the futures basis shrinking to zero at expiry, intrinsic value at expiry."""
 
-    def __init__(self, op, chain, sessions, now_utc, k, iv_shift=0.0):
+    def __init__(self, op, chain, sessions, now_utc, k, exit_iv=None):
         self.kind, self.K, self.lot = op["kind"], float(op["strike"]), int(op["lot_size"])
-        self.iv = max(op["iv_pct"] / 100.0 + iv_shift, 0.01)
+        self.iv = max(op["iv_pct"] / 100.0, 0.01)
+        # bought at the chain's IV (its quote); valued later at exit_iv when one is given (an IV crush or spike)
+        self.exit_iv = max(exit_iv, 0.01) if exit_iv else self.iv
         self.quote = float(op["entry_premium"])
         self.r = k["risk_free_rate"]
         exp = str(op["expiry"])
         self.exp_day = datetime.date(int(exp[:4]), int(exp[4:6]), int(exp[6:8]))
         self.T0 = f.years_to_expiry(exp, now_utc)
         self.spot = chain["spot"]
+        # the basis is held constant along a path: the forward moves one for one with the index, so neither the
+        # futures leg (points on the index) nor the option gains or loses from the basis converging
         self.basis = (chain.get("forward") or chain["spot"]) - chain["spot"]
+        sp = float(op.get("spread_pct") or 0.0)
+        self.spread = self.quote * sp / (100.0 + sp / 2.0)       # the ask less the bid, from the quote
         # time to expiry at each session's close; a session's open is about 6.25 hours before its close
         self.Ts = [max((self.exp_day - d).days / 365.0, 0.0) for d in sessions]
         self.T_open0 = (self.Ts[0] + 6.25 / 24 / 365.0) if self.Ts else 0.0
         self.bars_to_expiry = next((n + 1 for n, d in enumerate(sessions) if d >= self.exp_day), None)
         self.rates = f.costs.rates_from(k)
-        # the chain's ask over the model price at the chain's own spot and clock: the spread and the smile,
-        # carried into every repricing so a path that opens where the chain was priced pays the quote
+        # the chain's ask over the model price at the chain's own spot and clock (half the spread and the smile):
+        # a buy pays model + offset (the ask), a sell before expiry gets that less the spread (the bid)
         self.offset = self.quote - self._model(self.spot, self.T0)
 
-    def _model(self, level, T):
-        F = level + (self.basis * T / self.T0 if self.T0 > 0 else 0.0)
-        return f.black76(F, self.K, T, self.iv, self.r, self.kind)
+    def _model(self, level, T, iv=None):
+        return f.black76(level + self.basis, self.K, T, iv or self.iv, self.r, self.kind)
 
     def premium(self, level, bar):
-        return self._model(level, self.Ts[min(bar, len(self.Ts) - 1)])
+        """What a sell gets at that session: the bid before expiry, intrinsic value at expiry."""
+        T = self.Ts[min(bar, len(self.Ts) - 1)]
+        p = self._model(level, T, self.exit_iv)
+        return p if T <= 0 else max(p + self.offset - self.spread, 0.05)
 
     def entry_premium(self, level):
         """What the option costs when the order fills at the next open (the ask, as the chain prices it)."""
@@ -443,8 +480,8 @@ def summarise(results, money=None, exact_ci=False):
     outcomes = {}
     for key, _ in OUTCOMES:
         m = counts.get(key, 0)
-        if not m and key in ("expiry", "horizon"):
-            continue
+        if not m and key in ("expiry", "horizon", "nofill", "tp1_all"):
+            continue                      # outcomes this trade cannot have (no limit, a part booked, no expiry)
         p = m / float(n)
         if exact_ci:
             lo, hi = f.wilson(m, n)
@@ -498,8 +535,17 @@ def summarise(results, money=None, exact_ci=False):
 
 def analyse(c, cfg=None, direction=None, setup=None, entry=None, sl=None, tp1=None, tp2=None, chain=None,
             now_utc=None, lot=None, lots=1, qty=None, instrument="both", symbol="", paths=20000, horizon=40,
-            seed=7, iv=None, keep_drift=False, block=5.0, grid=False, methods=("replay", "bootstrap", "implied")):
+            seed=7, iv=None, keep_drift=False, block=5.0, grid=False, methods=("replay", "bootstrap", "implied"),
+            trail_whole=False):
     k = f.cfg_with(cfg)
+    if c and len(str(c[-1]["date"])) > 10:
+        raise TMError("intraday candles (%s): the Time Machine replays daily bars (INDmoney interval 1day)"
+                      % c[-1]["date"])
+    if int(horizon) < 1:
+        raise TMError("--horizon: at least 1 bar")
+    if chain and chain.get("spot") and abs(chain["spot"] / c[-1]["close"] - 1) > 0.1:
+        raise TMError("the chain's underlying is at %s but the chart closed at %s: is it the same instrument?"
+                      % (chain["spot"], c[-1]["close"]))
     ind = f.indicators(c, k)
     if len(c) < 80:
         raise TMError("only %d candles: the Time Machine needs at least 80 (a year of daily bars is best)" % len(c))
@@ -509,25 +555,35 @@ def analyse(c, cfg=None, direction=None, setup=None, entry=None, sl=None, tp1=No
         raise TMError("delivery shares cannot be held short overnight: a short view needs futures or a put")
     sym = symbol.upper()
     lot = lot or (chain or {}).get("lot_size") or f.INDEX_LOTS.get(sym)
-    if instrument == "equity":
-        q = int(qty or 1)
-        frac = math.floor(q * k["tp1_exit_fraction"]) / q if q >= 2 else 0.0
+    # the TP1 part in whole lots (or shares), as india-fno-plan's TP1 order is written; one lot cannot be split,
+    # and the planner's TP1 order then takes the whole lot out (or, with trail_whole, it all trails)
+    units = int(qty or 1) if instrument == "equity" else int(lots)
+    if units >= 2:
+        frac = math.floor(units * k["tp1_exit_fraction"]) / float(units)
     else:
-        frac = k["tp1_exit_fraction"] if int(lots) >= 2 else 0.0
+        frac = 0.0 if trail_whole else 1.0
     tr["frac"] = frac
     sessions = trading_days_after(c[-1]["date"], horizon, nse_holidays())
     leg = None
     notes = list(tr["notes"])
     tr["rules"] = {"trail_atr": k["trail_atr_mult"], "trail_after_tp2_atr": k["trail_after_tp2_atr_mult"],
                    "time_stop_bars": k["time_stop_bars"]}
+    if instrument == "option" and not chain:
+        raise TMError("--instrument option needs --chain (the option chain whose strike would be bought)")
     if instrument in ("option", "both"):
+        exp = str((chain or {}).get("expiry") or "")
         if not chain:
-            notes.append("no option chain given (--chain): the option leg and the implied method are left out")
+            notes.append("no option chain given (--chain): the option leg is left out%s"
+                         % ("" if iv else ", and the implied method has no volatility"))
+        elif len(exp) >= 8 and datetime.date(int(exp[:4]), int(exp[4:6]), int(exp[6:8])) < sessions[0]:
+            notes.append("option leg left out: the chain's expiry %s is before the entry session %s; fetch a later "
+                         "expiry" % (exp, sessions[0]))
         else:
             try:
                 op = f.option_plan({"direction": tr["direction"], "entry": tr["entry_plan"], "stop": tr["stop"],
                                     "tp1": tr["tp1"], "tp2": tr["tp2"], "atr": tr["atr"]}, chain, k, now_utc, lot, sym)
-                leg = OptionLeg(op, chain, sessions, now_utc or f.parse_now(None, chain), k)
+                leg = OptionLeg(op, chain, sessions, now_utc or f.parse_now(None, chain), k,
+                                (iv / 100.0) if iv else None)
                 tr["option"] = {kk: op[kk] for kk in ("expiry", "kind", "strike", "delta", "iv_pct", "entry_premium",
                                                       "lot_size", "spread_pct", "oi")}
                 tr["option"]["bars_to_expiry"] = leg.bars_to_expiry
@@ -546,15 +602,28 @@ def analyse(c, cfg=None, direction=None, setup=None, entry=None, sl=None, tp1=No
     if instrument in ("future", "both") and lot:
         notes.append("futures: a trade that outlives the month is assumed rolled to the next one (the roll's "
                      "spread and charges are not counted)")
+    if instrument in ("future", "both") and not lot:
+        notes.append("no lot size for %s (--lot): rupees per lot are left out, R is still measured" % (sym or "it"))
+    if grid and "bootstrap" not in methods:
+        notes.append("--grid needs the bootstrap method; it is left out")
     hz = horizon
     t = {"direction": tr["direction"], "stop": tr["stop"], "tp1": tr["tp1"], "tp2": tr["tp2"], "risk": tr["risk"],
-         "frac": frac}
+         "frac": frac, "limit": tr["limit"]}
+    dp_extra = 0.0
+    if instrument == "equity" and 0 < frac < 1:
+        # booking part at TP1 is a second delivery sell: a second DP charge
+        dp_extra = float(f.costs.rates_from(k).get("dp_charge_per_scrip") or 0) / int(qty or 1)
+
+    def cost_of(res):
+        """Charges in points; a past trade at another price level pays them in proportion to its value."""
+        scale = (res["entry"] / tr["entry_plan"]) if (res.get("entry") and tr["entry_plan"]) else 1.0
+        return (cost_points + (dp_extra if res.get("tp1_bar") is not None else 0.0)) * scale
 
     def money_of(res):
         """Rupees per lot (or for the shares) for the futures/equity position: points less every charge."""
         if not res["entered"]:
             return None
-        pts = res["pts"] - cost_points
+        pts = res["pts"] - cost_of(res)
         if instrument == "equity":
             return pts * int(qty or 1)
         return pts * lot if lot else None
@@ -562,7 +631,8 @@ def analyse(c, cfg=None, direction=None, setup=None, entry=None, sl=None, tp1=No
     def finish(res):
         """R after the round trip's charges, on the planned risk."""
         if res["entered"]:
-            res["r"] = (res["pts"] - cost_points) / tr["risk"] if tr["risk"] else 0.0
+            risk = res.get("risk") or tr["risk"]       # a past occurrence is measured on its own planned risk
+            res["r"] = (res["pts"] - cost_of(res)) / risk if risk else 0.0
         return res
 
     report = {"symbol": sym, "chart": chart_read(c, ind, an), "trade": tr, "notes": notes, "horizon_bars": hz,
@@ -574,7 +644,8 @@ def analyse(c, cfg=None, direction=None, setup=None, entry=None, sl=None, tp1=No
         base, _ = replay(c, ind, k, tr, frac, hz, False)
         occ = [finish(r) for r in occ]
         base = [finish(r) for r in base]
-        m = {money_key: [money_of(r) for r in occ]} if (lot or instrument == "equity") else None
+        fut_on = (lot and instrument in ("future", "both")) or instrument == "equity"
+        m = {money_key: [money_of(r) for r in occ]} if fut_on else None
         report["methods"]["replay"] = dict(summarise(occ, m, exact_ci=True), still_open_at_end=open_end,
                                            independent=episodes(occ),
                                            what=("every bar where %s %s fired" % (tr["setup"], tr["direction"])
@@ -593,7 +664,9 @@ def analyse(c, cfg=None, direction=None, setup=None, entry=None, sl=None, tp1=No
     sigma = (iv / 100.0) if iv else ((an or {}).get("atm_iv_pct") or 0) / 100.0
     if "implied" in methods and sigma > 0:
         phi = overnight_share(c)
-        sims.append(("implied", lambda rng: implied_path(rng, c[-1]["close"], ind["atr"][-1], sigma, phi, hz, k),
+        days = [datetime.date.fromisoformat(c[-1]["date"][:10])] + sessions
+        dts = [(b - a).days / 365.0 for a, b in zip(days, days[1:])]
+        sims.append(("implied", lambda rng: implied_path(rng, c[-1]["close"], ind["atr"][-1], sigma, phi, hz, k, dts),
                      "%d risk-neutral paths at %.2f%% volatility (%s), %.0f%% of it overnight (measured here)"
                      % (paths, 100 * sigma, "given" if iv else "the chain's ATM IV", 100 * phi)))
     elif "implied" in methods:
@@ -614,7 +687,7 @@ def analyse(c, cfg=None, direction=None, setup=None, entry=None, sl=None, tp1=No
                 opt_money.append(leg.pnl(ro, t))
                 opt_cls.append(ro["cls"])
         money = {}
-        if lot or instrument == "equity":
+        if (lot and instrument in ("future", "both")) or instrument == "equity":
             money[money_key] = fut_money
         if leg:
             money["option_inr_per_lot"] = opt_money
@@ -676,14 +749,15 @@ def render(rep):
     inr = f.inr
     ch, tr = rep["chart"], rep["trade"]
     L = []
-    L.append("TIME MACHINE  %s %s%s on the %s close, entry %s"
-             % (rep["symbol"] or "?", tr["direction"].upper(), (" [%s]" % tr["setup"]) if tr["setup"] else "",
-                ch["date"], inr(tr["entry_plan"])))
+    L.append("TIME MACHINE  %s %s%s%s on the %s close, entry %s"
+             % (rep["symbol"] or "?", tr["direction"].upper(), "" if tr.get("ok", True) else " (NOT WORTH IT)",
+                (" [%s]" % tr["setup"]) if tr["setup"] else "", ch["date"], inr(tr["limit"] or tr["entry_plan"])))
     L.append("")
     L.append("The chart")
-    L.append("  close %s (%+.2f%% 1 day, %+.2f%% 5 days, %+.2f%% 20 days); %s of the 52-week high %s, low %s"
+    L.append("  close %s (%+.2f%% 1 day, %+.2f%% 5 days, %+.2f%% 20 days); %s of the %s high %s, low %s"
              % (inr(ch["close"]), ch["change_pct"]["1"] or 0, ch["change_pct"]["5"] or 0, ch["change_pct"]["20"] or 0,
-                "%+.1f%%" % ch["from_high_pct"], inr(ch["high_52w"]), inr(ch["low_52w"])))
+                "%+.1f%%" % ch["from_high_pct"], "52-week" if ch["bars"] >= 245 else "%d-bar" % ch["bars"],
+                inr(ch["high_52w"]), inr(ch["low_52w"])))
     L.append("  trend %s (EMA20 %s vs EMA50 %s, EMA50 %s), ADX %s, RSI %s, Supertrend %s"
              % (ch["trend"], ch["ema20"], ch["ema50"], ch["ema50_slope"], ch["adx"], ch["rsi"], ch["supertrend"]))
     L.append("  volatility: ATR %s (%.2f%% of price, %s percentile of the year), Bollinger width %s percentile, "
@@ -693,33 +767,35 @@ def render(rep):
     if ch.get("chain"):
         x = ch["chain"]
         L.append("  options %s (%.1f days): ATM IV %s%% vs realized %s%%, 1-SD move +/-%s, PCR %s, max pain %s, "
-                 "OI resistance %s, support %s" % (x["expiry"], x["days_to_expiry"] or 0, x["atm_iv_pct"],
+                 "OI resistance %s, support %s" % (x["expiry"], x["days_to_expiry"] or 0, x["atm_iv_pct"] or "-",
                                                    ch["realized_vol_20d_pct"], x["expected_move_1sd"], x["pcr_oi"],
                                                    x["max_pain"], x["resistance"], x["support"]))
     L.append("")
     L.append("The trade%s" % ("" if not tr.get("why") else ": " + tr["why"]))
-    L.append("  entry %s next open | SL %s (%.2f points, %.2f ATR) | TP1 %s (%.2fR) | TP2 %s (%.2fR)"
-             % (inr(tr["entry_plan"]), inr(tr["stop"]), tr["risk"], tr["stop_atr"] or 0, inr(tr["tp1"]), tr["tp1_r"],
-                inr(tr["tp2"]), tr["tp2_r"]))
+    L.append("  entry %s | SL %s (%.2f points, %.2f ATR) | TP1 %s (%.2fR) | TP2 %s (%.2fR)"
+             % ("at the next open (about %s)" % inr(tr["entry_plan"]) if tr["limit"] is None else
+                "a DAY limit at %s from the next open" % inr(tr["limit"]), inr(tr["stop"]), tr["risk"],
+                tr["stop_atr"] or 0, inr(tr["tp1"]), tr["tp1_r"], inr(tr["tp2"]), tr["tp2_r"]))
     L.append("  exits: at TP1 %s and the stop moves to entry; trail %s ATR, %s ATR after TP2; time stop %d bars; "
              "horizon %d bars; charges %s points a round trip"
-             % ("%.0f%% is booked" % (100 * tr["frac"]) if tr["frac"] else "nothing is booked (one lot cannot be split)",
+             % ("the whole position exits (one lot cannot be split)" if tr["frac"] >= 1 else
+                ("%.0f%% is booked" % (100 * tr["frac"]) if tr["frac"] else "nothing is booked (--trail-whole)"),
                 tr["rules"]["trail_atr"], tr["rules"]["trail_after_tp2_atr"], tr["rules"]["time_stop_bars"],
                 rep["horizon_bars"], tr["cost_points"]))
     L.append("  with no edge, P(TP1 before SL) = %.1f%% and P(TP2 before SL) = %.1f%% (risk / (risk + reward))"
              % (100 * tr["no_edge_p_tp1"], 100 * tr["no_edge_p_tp2"]))
     if tr.get("option"):
         o = tr["option"]
-        L.append("  option leg: %s %s %s at %s (delta %s, IV %s%%, %d sessions to expiry), lot %d"
+        L.append("  option leg: %s %s %s at %s (delta %s, IV %s%%, %s sessions to expiry), lot %d"
                  % (o["expiry"], int(o["strike"]), o["kind"], o["entry_premium"], o["delta"], o["iv_pct"],
-                    o["bars_to_expiry"], o["lot_size"]))
+                    o["bars_to_expiry"] or "over %d" % rep["horizon_bars"], o["lot_size"]))
     for n in rep["notes"]:
         L.append("  note: " + n)
     L.append("")
     cols = [m for m in ("replay", "baseline", "bootstrap", "implied") if m in rep["methods"]]
     if not cols:
         return "\n".join(L)
-    L.append("%-34s" % "How it ends" + "".join("%-21s" % _head(m, rep["methods"][m]) for m in cols))
+    L.append("%-34s" % "How it ends (95% interval)" + "".join("%-25s" % _head(m, rep["methods"][m]) for m in cols))
     for key, label in OUTCOMES:
         if not any(key in rep["methods"][m].get("outcomes", {}) for m in cols):
             continue
@@ -727,16 +803,18 @@ def render(rep):
         for m in cols:
             o = rep["methods"][m].get("outcomes", {}).get(key)
             if not o:
-                row += "%-21s" % "  0.0%"
+                row += "%-25s" % ("  0.0%" if rep["methods"][m].get("n") else "     -")
                 continue
-            cell = "%s %s" % (pct(o["p"]), ("%+.2fR" % o["avg_r"]) if o.get("avg_r") is not None else "")
-            row += "%-21s" % cell
+            lo, hi = o["ci95"]
+            cell = "%s (%.0f-%.0f) %s" % (pct(o["p"]), 100 * lo, 100 * hi,
+                                          ("%+.2fR" % o["avg_r"]) if o.get("avg_r") is not None else "")
+            row += "%-25s" % cell
         L.append(row)
         if key == "stop":
             row = "  %-32s" % "  gapped through the stop"
             for m in cols:
                 o = rep["methods"][m].get("outcomes", {}).get("stop")
-                row += "%-21s" % (pct(o.get("gapped_through")) if o else "")
+                row += "%-25s" % (pct(o.get("gapped_through")) if o else "")
             L.append(row)
     L.append("")
     for label, key, fmt in (("expectancy per trade", "expectancy_r", "%+.3fR"), ("chance of a profit", "p_profit", None),
@@ -747,7 +825,7 @@ def render(rep):
         for m in cols:
             s = rep["methods"][m]
             if not s.get("entered"):
-                row += "%-21s" % "-"
+                row += "%-25s" % "-"
                 continue
             if key == "expectancy_r":
                 se = s.get("expectancy_se")
@@ -765,7 +843,7 @@ def render(rep):
                 cell = "%.2fR / %.2fR" % (s["mae_r_median"], s["mae_r_p90"])
             else:
                 cell = "%g / %g" % (round(s["bars_median"], 1), round(s["bars_p90"], 1))
-            row += "%-21s" % cell
+            row += "%-25s" % cell
         L.append(row)
     for key, title in (("futures_inr_per_lot", "futures, rupees per lot after charges"),
                        ("equity_inr", "shares, rupees for the position after charges"),
@@ -777,14 +855,14 @@ def render(rep):
         for sub, lab in (("expectancy", "expectancy"), ("p_loss", "chance of a loss"), ("p5", "worst 5%"),
                          ("p50", "median"), ("p95", "best 5%"), ("worst", "worst path"),
                          ("premium_paid", "premium paid (the quote)"),
-                         ("p_lose_half_premium", "loses half the premium or more"),
+                         ("p_lose_half_premium", "loses >= half the premium"),
                          ("p_held_to_expiry", "still held at expiry")):
             if not any(sub in rep["methods"][m].get(key, {}) for m in cols):
                 continue
             row = "    %-30s" % lab
             for m in cols:
                 v = rep["methods"][m].get(key, {}).get(sub)
-                row += "%-21s" % ("-" if v is None else (pct(v) if sub.startswith("p_") else inr(v)))
+                row += "%-25s" % ("-" if v is None else (pct(v) if sub.startswith("p_") else inr(v)))
             L.append(row)
     if rep.get("grid"):
         g = rep["grid"]
@@ -862,13 +940,15 @@ def main(argv=None):
     ap.add_argument("--chain", help="option chain JSON (INDmoney or NSE): the option leg and the implied method")
     ap.add_argument("--direction", choices=["long", "short"], help="default: the setup that fired on the last bar")
     ap.add_argument("--setup", choices=list(f.SETUPS), help="replay only this setup's past occurrences")
-    ap.add_argument("--entry", type=float)
+    ap.add_argument("--entry", type=float, help="a DAY limit entry (default: the next open)")
     ap.add_argument("--sl", type=float)
     ap.add_argument("--tp1", type=float)
     ap.add_argument("--tp2", type=float)
     ap.add_argument("--instrument", choices=["future", "option", "both", "equity"], default="both")
     ap.add_argument("--lot", type=int, help="lot size (indices and the chain have it)")
-    ap.add_argument("--lots", type=int, default=1, help="lots held: with 1, nothing can be booked at TP1")
+    ap.add_argument("--lots", type=int, default=1, help="lots held; TP1 books half in whole lots (one lot: all of it)")
+    ap.add_argument("--trail-whole", action="store_true",
+                    help="with one lot (or one share), trail the whole position after TP1 instead of exiting there")
     ap.add_argument("--qty", type=int, help="shares, for --instrument equity")
     ap.add_argument("--paths", type=int, default=20000)
     ap.add_argument("--horizon", type=int, default=40, help="bars to follow a trade at most")
@@ -901,7 +981,7 @@ def main(argv=None):
             raise TMError("--paths: at least 100 (20,000 gives about +/-0.7 points on a 50% probability)")
         rep = analyse(c, cfg, a.direction, a.setup, a.entry, a.sl, a.tp1, a.tp2, chain, now, a.lot, a.lots, a.qty,
                       a.instrument, sym, a.paths, a.horizon, a.seed, a.iv, a.keep_drift, a.block, a.grid,
-                      tuple(a.methods))
+                      tuple(a.methods), a.trail_whole)
     except (TMError, f.FnoError, ValueError, OSError) as e:
         print("timemachine.py: %s" % e, file=sys.stderr)
         return 1
