@@ -466,7 +466,8 @@
     const delta = T.delta76(F, K, TeffQ, sigmaQuote, r, kind);
     const spec = { kind, K, basis, sigma, r, half, phi, day: sp.day, expiryIso: expIso, delta, lotSize, exchange, m0: 0 };
     const pricer = makePricer(spec, clock);
-    const gapVar = sp.kind === "open" ? Math.max(sigma * sigma * (TeffQ - clock.Teff(0)), 0) : 0;
+    const gapMult = opts.gapMult && opts.gapMult > 0 ? opts.gapMult : 1;                // the same, for the overnight gap
+    const gapVar = sp.kind === "open" ? Math.max(sigma * sigma * (TeffQ - clock.Teff(0)), 0) * gapMult * gapMult : 0;
     const eMin1 = entryMinute(sp, 1), eMin5 = entryMinute(sp, 5);
     const entryNow = pricer.price(spot0, clock.Teff(sp.kind === "open" ? eMin5 : eMin1)) + half;
     const entryFixed = mode === "new" && opts.entryPrice && sp.kind === "live" ? Number(opts.entryPrice) : null;
@@ -639,7 +640,7 @@
       meta: {
         mode, side: kind, strike: K, expiry: chain.expiry, underlying: chain.underlying, lot: lotSize, lots: qLots, qty: qLots * lotSize, exchange,
         spot0, forward: F, basis, start: sp, startLabel: sp.label, step, step_note: stepNote, tight, bars: gi.n - gi.eIdx, barsFrom: hm(gi.m0), entry_min: gi.m0, exitAt: rules.exitAt,
-        sigma_calendar_pct: 100 * sigmaQuote, sigma_clock_pct: 100 * sigma, iv_overridden: !!opts.ivPct, vol_mult: volMult, phi, delta, mid, bid, ask, half_spread: half,
+        sigma_calendar_pct: 100 * sigmaQuote, sigma_clock_pct: 100 * sigma, iv_overridden: !!opts.ivPct, vol_mult: volMult, gap_mult: gapMult, phi, delta, mid, bid, ask, half_spread: half,
         days_to_expiry: clock.D, profile: prof.source, realised_ann_pct: realisedAnn ? 100 * realisedAnn : null,
         realised_vs_implied: realisedAnn ? realisedAnn / sigma : null, vol_mode: volModeB, quote_at: q,
         entry_plan: entryPlan, entry_flat: r05(entryNow), outlay: entryPlan * qLots * lotSize, bid_now: bidNow, value_now: valueNow, flat_at_exit: flat,
