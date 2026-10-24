@@ -34,6 +34,21 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import fnocore as f  # noqa: E402
 
 
+def _timemachine():
+    import importlib.util
+    here = os.path.dirname(os.path.abspath(__file__))
+    path = os.path.join(os.path.dirname(here), "india-fno-timemachine", "timemachine.py")
+    if not os.path.exists(path):
+        return None
+    spec = importlib.util.spec_from_file_location("timemachine", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+tm = _timemachine()
+
+
 def read_json(path, default=None):
     if not path or not os.path.exists(path):
         return default
@@ -98,6 +113,10 @@ def build(a):
             raise f.FnoError("an option plan needs --chain (the INDmoney or NSE option chain for %s)" % sym)
         plan["option"] = f.option_plan(lv, chain, cfg, now, lot, sym)
     plan["orders"] = orders_for(plan, chain, k, a)
+    if tm is not None and not getattr(a, "no_timemachine", False):
+        size = (plan.get("option") or {}).get("lots") or (plan.get("futures") or {}).get("lots") or 1
+        plan["time_machine"] = tm.gate(c, cfg, a.direction, None, a.entry, None, None, None, chain, now, lot, size, sym,
+                                       getattr(a, "tm_paths", 4000) or 4000)
     return plan
 
 
@@ -212,6 +231,8 @@ def render(plan):
             L.append("          no size: " + op["why_zero"])
         for n in op["notes"]:
             L.append("          note: " + n)
+    if plan.get("time_machine") and tm is not None:
+        L.extend("  " + x for x in tm.gate_line(plan["time_machine"]))
     for o in plan["orders"]:
         if o["quantity"] // o["lot_size"] == 1:
             L.append("  note: with 1 lot of %s there is no partial exit at TP1: either exit it all at TP1, or keep it "
@@ -231,6 +252,10 @@ def cmd_new(a):
         if not plan["levels"]["ok"] and not a.force:
             raise f.FnoError("the plan is flagged not worth it (%s); nothing written. --force writes it anyway"
                              % "; ".join(plan["levels"]["notes"]))
+        g = plan.get("time_machine")
+        if g and g["gate"] == "fail" and not a.force:
+            raise f.FnoError("the Time Machine finds this trade negative after charges (%s); nothing written. "
+                             "--force writes it anyway" % g["reason"])
         write_json(a.orders_out, {"created_by": "india-fno-plan", "created_at": plan["made_at"], "status": "proposed",
                                   "note": "F&O entry order(s). Place the stop-loss as soon as the entry fills.",
                                   "orders": plan["orders"]})
@@ -397,6 +422,9 @@ def main(argv=None):
     p.add_argument("--force", action="store_true", help="write even a plan flagged not worth it")
     p.add_argument("--orders-out", default="trader/orders.json")
     p.add_argument("--plans", default="trader/fno/plans.json")
+    p.add_argument("--no-timemachine", action="store_true",
+                   help="skip the Time Machine gate (a plan it finds negative is otherwise not written without --force)")
+    p.add_argument("--tm-paths", type=int, default=4000, help="paths per method for the gate")
     p.add_argument("--json", action="store_true")
     p = sub.add_parser("trail", help="advance an open plan through new bars")
     p.add_argument("id")

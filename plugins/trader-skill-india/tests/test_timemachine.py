@@ -320,3 +320,93 @@ class Instruments(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Gate(unittest.TestCase):
+    """Every scanned or planned trade goes through the Time Machine's gate."""
+
+    def test_gate_reads_the_two_simulated_methods(self):
+        c = f.load_candles(NIFTY)
+        g = tm.gate(c, None, "short", None, None, None, None, None, f.parse_chain(CHAIN, "NIFTY"), CLOSE, None, 2, "NIFTY",
+                    3000)
+        self.assertEqual(g["gate"], "fail")                    # the implied paths are significantly negative here
+        self.assertIn("implied", g["reason"])
+        self.assertLess(g["methods"]["implied"]["ci95"][1], 0)
+        self.assertIn("option_inr_per_lot", g["methods"]["bootstrap"])
+        self.assertEqual(g["replay"]["independent"], 3)
+        text = "\n".join(tm.gate_line(g))
+        self.assertIn("time machine: FAIL", text)
+        self.assertIn("replay of this chart's past", text)
+
+    def test_watch_when_nothing_can_be_told_from_zero_and_pass_needs_a_positive_band(self):
+        c = f.load_candles(REL)
+        g = tm.gate(c, None, "long", None, None, None, None, None, None, None, 500, 2, "RELIANCE", 3000)
+        self.assertIn(g["gate"], ("watch", "fail", "pass"))
+        words = [x["word"] for x in g["methods"].values()]
+        want = "fail" if "negative" in words else ("pass" if "positive" in words else "watch")
+        self.assertEqual(g["gate"], want)                      # the verdict is exactly the rule
+        self.assertNotIn("implied", g["methods"])              # no chain, no volatility: the bootstrap alone
+
+    def test_errors_are_not_passes(self):
+        c = f.load_candles(NIFTY)
+        g = tm.gate(c, None, "long", None, None, 99999.0, None, None, None, None, 65, 1, "NIFTY", 500)   # stop above entry
+        self.assertEqual(g["gate"], "error")
+        self.assertIn("NOT CHECKED", tm.gate_line(g)[0])
+        self.assertEqual(tm.GATE_RANK["error"], max(tm.GATE_RANK.values()))
+
+    def test_scan_runs_the_gate_by_default_and_orders_by_it(self):
+        scan = load("india-fno-scan", "scan")
+        out, err = io.StringIO(), io.StringIO()
+        with redirect_stdout(out), redirect_stderr(err):
+            code = scan.main(["--candles", NIFTY, REL, "--lots", "RELIANCE=500", "--chain", "NIFTY=" + CHAIN, "--now",
+                              "2026-10-19T10:00:00", "--config", "/nonexistent", "--tm-paths", "1500"])
+        self.assertEqual(code, 0)
+        self.assertIn("time machine: ", out.getvalue())
+        out = io.StringIO()
+        with redirect_stdout(out), redirect_stderr(io.StringIO()):
+            scan.main(["--candles", NIFTY, "--chain", "NIFTY=" + CHAIN, "--now", "2026-10-19T10:00:00", "--config",
+                       "/nonexistent", "--no-timemachine"])
+        self.assertNotIn("time machine:", out.getvalue())
+
+    def test_plan_will_not_write_a_trade_the_gate_fails_unless_forced(self):
+        import tempfile
+        plan = load("india-fno-plan", "plan")
+        real = plan.tm.gate
+        try:
+            plan.tm.gate = lambda *a, **k: {"gate": "fail", "reason": "implied is negative after charges (95% band below zero)",
+                                           "methods": {}}
+            with tempfile.TemporaryDirectory() as d:
+                args = ["new", "RELIANCE", "--candles", REL, "--direction", "long", "--lot", "500", "--instrument", "future",
+                        "--fut-expiry", "20261229", "--capital", "3000000", "--config", "/nonexistent", "--write",
+                        "--orders-out", os.path.join(d, "o.json"), "--plans", os.path.join(d, "p.json")]
+                out, err = io.StringIO(), io.StringIO()
+                with redirect_stdout(out), redirect_stderr(err):
+                    code = plan.main(args)
+                self.assertEqual(code, 1, err.getvalue())
+                self.assertIn("Time Machine finds this trade negative", err.getvalue())
+                self.assertFalse(os.path.exists(os.path.join(d, "o.json")))
+                out, err = io.StringIO(), io.StringIO()
+                with redirect_stdout(out), redirect_stderr(err):
+                    code = plan.main(args + ["--force"])
+                self.assertEqual(code, 0, err.getvalue())
+                self.assertTrue(os.path.exists(os.path.join(d, "o.json")))
+                self.assertIn("time machine: FAIL", out.getvalue())
+                os.remove(os.path.join(d, "o.json"))
+                with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                    plan.main(args + ["--no-timemachine"])         # skipped: written as before
+                self.assertTrue(os.path.exists(os.path.join(d, "o.json")))
+        finally:
+            plan.tm.gate = real
+
+    def test_the_real_plan_json_carries_the_gate(self):
+        plan = load("india-fno-plan", "plan")
+        out, err = io.StringIO(), io.StringIO()
+        with redirect_stdout(out), redirect_stderr(err):
+            plan.main(["new", "NIFTY", "--candles", NIFTY, "--direction", "short", "--chain", CHAIN, "--instrument", "option",
+                       "--now", "2026-10-19T15:30", "--config", "/nonexistent", "--capital", "3000000", "--json",
+                       "--tm-paths", "1500"])
+        doc = json.loads(out.getvalue())
+        g = doc["time_machine"]
+        words = [x["word"] for x in g["methods"].values()]
+        self.assertEqual(g["gate"], "fail" if "negative" in words else ("pass" if "positive" in words else "watch"))
+        self.assertTrue(g["reason"])

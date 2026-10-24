@@ -69,7 +69,8 @@ analyst -> screener -> budget -> risk -> broker       (pick your own)
 rebalance / tax -> risk -> broker                     (maintain)
 fno-chain -> fno-scan -> fno-plan -> risk -> broker   (F&O, with fno-plan trail after each session)
 fno-backtest                                          (before trusting any setup)
-fno-scan -> fno-timemachine -> fno-plan               (every way this one trade can end, before taking it)
+fno-scan -> fno-timemachine -> fno-plan               (every way this one trade can end, before taking it;
+                                                      scan and plan run the Time Machine gate themselves)
 costs                                                 (any time)
 ```
 

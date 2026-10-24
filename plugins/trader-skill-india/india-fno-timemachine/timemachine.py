@@ -1021,6 +1021,99 @@ def verdict(rep):
     return lines
 
 
+# ---------------------------------------------------------------- the gate
+
+GATE_RANK = {"pass": 0, "watch": 1, "fail": 2, "error": 3}
+
+
+def _band(s):
+    """The 95% band of a simulated method's expectancy: the simulation's own error and, for the bootstrap, the
+    uncertainty of one year of history."""
+    se = math.hypot(s.get("expectancy_se") or 0.0, s.get("history_se") or 0.0)
+    return s["expectancy_r"] - 1.96 * se, s["expectancy_r"] + 1.96 * se
+
+
+def gate(c, cfg=None, direction=None, setup=None, entry=None, sl=None, tp1=None, tp2=None, chain=None, now_utc=None,
+         lot=None, lots=1, symbol="", paths=4000, horizon=40, seed=7):
+    """Every scanned or planned trade goes through here: the Time Machine's three methods, boiled down to one
+    verdict and the few numbers behind it. The verdict reads the two simulated methods (the bootstrap of this chart's
+    own days, and the option-implied paths) the way the full report does:
+
+      fail   at least one of them is significantly NEGATIVE after charges (its 95% band lies below zero)
+      pass   neither is negative and at least one is significantly positive
+      watch  neither can be told from zero (the usual honest answer)
+
+    The replay of past occurrences is shown but does not decide: it is few and overlapping. Returns a plain dict
+    (JSON-safe): {"gate", "reason", "methods": {...}, "replay": {...}, "option": {...}, "paths"}."""
+    try:
+        rep = analyse(c, cfg, direction, setup, entry, sl, tp1, tp2, chain, now_utc, lot, int(lots or 1), None,
+                      "both" if chain else "future", symbol, paths, horizon, seed)
+    except (TMError, f.FnoError, ValueError) as e:
+        return {"gate": "error", "reason": str(e)}
+    ms = rep["methods"]
+    out = {"gate": "watch", "paths": paths, "methods": {}, "trade": {"direction": rep["trade"]["direction"],
+           "setup": rep["trade"]["setup"], "stop": rep["trade"]["stop"], "tp1": rep["trade"]["tp1"],
+           "tp2": rep["trade"]["tp2"], "frac": rep["trade"]["frac"]}}
+    words = []
+    for m in ("bootstrap", "implied"):
+        s = ms.get(m)
+        if not s or not s.get("entered"):
+            continue
+        lo, hi = _band(s)
+        word = "positive" if lo > 0 else ("negative" if hi < 0 else "zero")
+        words.append((m, word))
+        st = s["outcomes"].get("stop", {})
+        out["methods"][m] = {"expectancy_r": s["expectancy_r"], "ci95": [round(lo, 3), round(hi, 3)], "word": word,
+                             "p_profit": s["p_profit"], "p_stop": st.get("p"), "bars_median": s["bars_median"]}
+        for key in ("futures_inr_per_lot", "option_inr_per_lot"):
+            if key in s:
+                out["methods"][m][key] = {"expectancy": s[key]["expectancy"], "p_loss": s[key]["p_loss"]}
+    rp, base = ms.get("replay"), ms.get("baseline")
+    if rp and rp.get("entered"):
+        out["replay"] = {"n": rp["entered"], "independent": rp.get("independent"), "expectancy_r": rp["expectancy_r"],
+                         "baseline_r": (base or {}).get("expectancy_r")}
+    if not words:
+        out.update(gate="error", reason="no simulated method could run (no volatility: give an option chain)")
+        return out
+    neg = [m for m, w in words if w == "negative"]
+    pos = [m for m, w in words if w == "positive"]
+    if neg:
+        out["gate"] = "fail"
+        out["reason"] = "%s %s after charges (95%% band below zero)" % (" and ".join(neg), "is negative" if len(neg) == 1 else "are negative")
+    elif pos:
+        out["gate"] = "pass"
+        out["reason"] = "%s positive after charges and none negative (95%% band above zero)" % " and ".join(pos)
+    else:
+        out["reason"] = "no method can tell the average from zero: no edge shown, none ruled out"
+    out["verdict"] = verdict(rep)
+    return out
+
+
+def gate_line(g):
+    """One or two lines for scan.py and plan.py."""
+    if g.get("gate") == "error":
+        return ["time machine: NOT CHECKED (%s)" % g.get("reason")]
+    parts = []
+    for m, label in (("bootstrap", "bootstrap"), ("implied", "implied")):
+        x = g["methods"].get(m)
+        if x:
+            parts.append("%s %+.3fR (95%% %+.3f to %+.3f)" % (label, x["expectancy_r"], x["ci95"][0], x["ci95"][1]))
+    lines = ["time machine: %s  %s" % (g["gate"].upper(), "; ".join(parts))]
+    lines.append("  %s" % g["reason"])
+    extra = []
+    for m in ("bootstrap", "implied"):
+        x = g["methods"].get(m)
+        if x and x.get("p_stop") is not None:
+            extra.append("%s: stop before TP1 %.0f%%, profit %.0f%%" % (m, 100 * x["p_stop"], 100 * x["p_profit"]))
+    if g.get("replay"):
+        r = g["replay"]
+        extra.append("replay of this chart's past: %d occurrence(s), %s independent, %+.2fR (every bar %+.2fR)"
+                     % (r["n"], r["independent"], r["expectancy_r"], r.get("baseline_r") or 0.0))
+    for x in extra:
+        lines.append("  " + x)
+    return lines
+
+
 # ---------------------------------------------------------------- cli
 
 def main(argv=None):

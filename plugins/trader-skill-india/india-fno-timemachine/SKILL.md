@@ -145,6 +145,24 @@ Use it to replay an IV crush or spike.
    `/india-broker`, one explicit yes per order. The Time Machine never writes
    or sends an order.
 
+## The gate (scan and plan run it for you)
+
+`/india-fno-scan` and `/india-fno-plan` send every signal and every plan
+through a compact version of this tool (`timemachine.gate`, 4,000 paths a
+method) and print one line: PASS, WATCH or FAIL.
+
+| verdict | rule (the two simulated methods, after charges, 95% band) |
+| --- | --- |
+| FAIL | at least one is negative: its band lies entirely below zero |
+| PASS | none is negative and at least one is positive |
+| WATCH | neither can be told from zero: no edge shown, none ruled out (the usual answer) |
+
+The replay of past occurrences is shown but does not decide: it is few and
+overlapping. `plan.py new --write` will not write a plan the gate fails
+unless `--force` is given; `--no-timemachine` skips the gate on either tool.
+The Trading Desk app uses the same rule on every strike it scans and every
+trade it logs.
+
 ## Example (real data: NIFTY to the 2026-10-19 close, the 27-Oct chain, 2 lots)
 
 ```
