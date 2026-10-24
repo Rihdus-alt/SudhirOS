@@ -88,7 +88,10 @@ changes them.
 4. For each signal, show: direction, setup, the levels, size and max loss,
    the option alternative, and the track record WITH its interval. Lead with
    any NOT WORTH IT flag and with a track record that is negative or thin.
-5. If the user wants to act: `/india-fno-plan` writes the entry order and
+5. To see every way one signal can end, and how often, before taking it:
+   `/india-fno-timemachine` replays that exact trade through the chart's
+   history, a bootstrap of its real days and the chain's implied volatility.
+6. If the user wants to act: `/india-fno-plan` writes the entry order and
    saves the plan; then `/india-risk`, then `/india-broker`, one yes per order.
 
 ## Example (real data, NIFTY 50, close of 2026-10-19)
