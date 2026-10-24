@@ -484,9 +484,9 @@
     const tight = stopPts / barSd5;
     const chosen = STEPS.includes(+opts.step);
     const step = chosen ? +opts.step : (tight < 3 ? 1 : 5);
-    const stepNote = chosen ? "chosen: " + step + "-minute bars" + (step === 15 && tight < 2 ? " (coarse for a stop only " + tight.toFixed(1) + " typical 5-minute moves away: the odds of reaching a nearby target first read low)" : "")
-      : step === 1 ? "auto: 1-minute bars (your stop is " + tight.toFixed(1) + " typical 5-minute moves away; finer bars are cheap here and drop the 'stop first' assumption for bars that touch both levels)"
-        : "auto: 5-minute bars (your stop is " + tight.toFixed(1) + " typical 5-minute moves away)";
+    const stepNote = chosen ? "chosen: " + step + "-minute candles" + (step === 15 && tight < 2 ? " (coarse for a stop only " + tight.toFixed(1) + " typical 5-minute moves away: the odds of reaching a nearby target first read low)" : "")
+      : step === 1 ? "auto: 1-minute candles (your stop is " + tight.toFixed(1) + " typical 5-minute moves away; finer candles are cheap here and make the 'stop first' assumption for a candle that touches both levels rarely matter)"
+        : "auto: 5-minute candles (your stop is " + tight.toFixed(1) + " typical 5-minute moves away)";
 
     // ---- the three models
     const wanted = opts.models || ["implied", "bootstrap", "replay"];
@@ -633,6 +633,13 @@
       }
     }
     progress(1, "done");
+    // what this quote predicted for the session still to come (and for the overnight gap), unscaled by anything learned: the
+    // learner later compares it with what the tape did
+    let pace = null;
+    if (!opts.ivPct) {
+      const sameDay = q.day === sp.day && q.m < TRADEMIN, m5 = sp.kind === "open" || !sameDay ? 0 : Math.ceil(q.m / 5) * 5;
+      if (sp.kind === "open" || sameDay) pace = { day: sp.day, m5, sess_var: sigma * sigma * (clock.Teff(m5) - clock.Teff(TRADEMIN)), gap_var: sp.kind === "open" && q.day < sp.day ? gapVar / (gapMult * gapMult) : null, expiry_iso: expIso };
+    }
     const flat = pricer.bidAt(spot0, clock.Teff(TRADEMIN));      // the index unchanged all the way: only time has passed
     const gi = gridOf(step, step);
     spec.m0 = models.implied ? models.implied.entry_minute : gi.m0;
@@ -645,7 +652,7 @@
         realised_vs_implied: realisedAnn ? realisedAnn / sigma : null, vol_mode: volModeB, quote_at: q,
         entry_plan: entryPlan, entry_flat: r05(entryNow), outlay: entryPlan * qLots * lotSize, bid_now: bidNow, value_now: valueNow, flat_at_exit: flat,
         flat_decay_pct: (flat - bidNow) / Math.max(bidNow, 0.05) * 100, flat_decay_inr: (flat - bidNow) * qLots * lotSize,
-        position: posState, day_stop: rules.dayStop, ms: Date.now() - t0, perf, auto_paths: auto, tol_inr: tol, spec, bar_sd5_pts: barSd5, stop_pts: stopPts,
+        position: posState, day_stop: rules.dayStop, pace, ms: Date.now() - t0, perf, auto_paths: auto, tol_inr: tol, spec, bar_sd5_pts: barSd5, stop_pts: stopPts,
       },
       levels: Object.assign({}, planLv, { risk_inr: (entryPlan - planLv.sl) * qLots * lotSize }),
       rules, models, gate: mode === "new" ? gateOf(models) : null, blend: blendOf(models, opts.weights), sensitivity: sens, notes,

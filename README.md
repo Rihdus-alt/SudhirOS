@@ -40,10 +40,14 @@ together) and a `SKILL.md` that routes each request to the right folder.
 
 `apps/time-machine/` is the Time Machine as an app: the fifth tab of the Trading Desk page
 (Claude artifact). Intraday mode replays the desk's own plan (SL, T1, T2, the trailing
-ladder, out by 15:15) on 5-minute bars with the option repriced on every bar; swing mode is
-the daily-bar tool above, for futures, options or shares. It is the JavaScript port of the
-Python tool, held to it by tests, and it counts what a trade does on paths from several
-models. It does not predict. See [apps/time-machine/README.md](apps/time-machine/README.md).
+ladder, out by 15:15) on 1-, 5- or 15-minute candles with the option repriced on every
+candle; swing mode is the daily-bar tool above, for futures, options or shares. It is the
+JavaScript port of the Python tool, held to it by tests, and it counts what a trade does on
+paths from several models. Every plan goes through it: the Trade tab checks the plan before
+it is logged, the scan ranks contracts by its gate, and the coach must run each setup
+through it. A bounded, freezable learning layer corrects its pace, its odds and its model
+weights from the real tapes the app saves. It does not predict.
+See [apps/time-machine/README.md](apps/time-machine/README.md).
 
 ## Layout
 
@@ -65,7 +69,7 @@ cd plugins/trader-skill-india && python3 -m unittest discover -s tests -v
 And the Time Machine app's (Node 18+; the browser check also needs Playwright and Chromium):
 
 ```bash
-node --test apps/time-machine/test/core.test.js apps/time-machine/test/intraday.test.js apps/time-machine/test/charts.test.js
+node --test apps/time-machine/test/core.test.js apps/time-machine/test/intraday.test.js apps/time-machine/test/charts.test.js apps/time-machine/test/learn.test.js
 ```
 
 Not financial advice. Nothing in these plugins places an order without your

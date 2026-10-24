@@ -112,7 +112,7 @@ test("pace: recent sessions count more, so a change of regime is followed", () =
   assert.ok(p.mult < Math.sqrt(1.3) + 0.02);
 });
 
-test("freezing stops every kind of learning; the state survives a JSON round trip and an unknown version resets", () => {
+test("freezing stops the pace, the calibration and the weights; the state survives a JSON round trip and an unknown version resets", () => {
   let st = paceWorld(1.3, 30);
   st.frozen = true;
   const snap = JSON.stringify(st);
@@ -212,6 +212,20 @@ test("model weights: stay at the prior until 25 resolved, then favour the model 
   for (const k of L.MODELS) near(we[k], L.PRIOR_W[k], 1e-9, "equal scores leave " + k + " at its prior");
   const b = L.bounded({ a: 0.95, b: 0.04, c: 0.01 }, 0.1, 0.7);
   near(b.a + b.b + b.c, 1, 1e-9); assert.ok(b.a <= 0.7 + 1e-9 && b.b >= 0.1 - 1e-9 && b.c >= 0.1 - 1e-9);
+});
+
+test("the stored state stays small at every limit (it lives in one database document)", () => {
+  const rng = T.makeRng("size");
+  let st = L.emptyState();
+  for (const ix of ["NIFTY", "SENSEX"]) for (const kind of ["sess", "gap"]) for (let i = 0; i < 200; i++) st = L.observePace(st, ix, kind, 0.000012345678 * (1 + rng.random()), 0.000011234567, `${kind}:${ix}:2026-01-${i}`, "2026-10-24T10:00:00.000Z");
+  for (let i = 0; i < 900; i++) {
+    const p = rng.random(), pr = { id: "pred_NIFTY_2026-10-23_" + i, blend: { profit: p, t1: p * 0.7, stop: 1 - p }, models: { implied: { profit: p, t1: p, stop: 1 - p }, bootstrap: { profit: p, t1: p, stop: 1 - p }, replay: { profit: p, t1: p, stop: 1 - p } } };
+    st = L.observeOutcome(st, pr, out(rng.random() < p ? 1 : 0), i % 3 ? "paper" : "trade", "2026-10-24T10:00:00.000Z");
+  }
+  for (const m of L.MODELS) for (const s of [1, 5, 15]) st = L.observePerf(st, m, s, 68, 1000, 1234.5678);
+  const bytes = JSON.stringify(st).length;
+  assert.ok(bytes < 200000, "state is " + bytes + " bytes");
+  assert.ok(st.seen.length <= L.LIM.seen && st.log.length <= L.LIM.log);
 });
 
 // ---------------------------------------------------------------------------------------------------------------- real predictions on real tapes

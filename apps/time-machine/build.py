@@ -17,7 +17,7 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SRC = os.path.join(HERE, "src")
-BUILD = "2026-10-24a"
+BUILD = "2026-10-24b"
 
 
 def read(name):
@@ -65,11 +65,11 @@ def build(base_text):
 </nav>""", "nav")
 
     # 2. the engines and charts, before the desk's own script
-    engines = "".join("<script>\n%s\n</script>\n" % read(f) for f in ("tmx-core.js", "tmx-intraday.js", "tmx-charts.js"))
+    engines = "".join("<script>\n%s\n</script>\n" % read(f) for f in ("tmx-core.js", "tmx-intraday.js", "tmx-learn.js", "tmx-charts.js"))
     p.once("<script>\n(() => {\nconst IND = \"IndMoney\";", engines + "<script>\n(() => {\nconst IND = \"IndMoney\";", "engines")
 
     # 3. the tab's own code, before boot()
-    ui = read("tmx-ui.js")
+    ui = read("tmx-ui.js") + "\n" + read("tmx-desk.js")
     if "</script" in ui:
         sys.exit("build.py: the UI code contains a closing script tag")
     p.once("async function boot(){", ui + "\nasync function boot(){", "ui")
@@ -78,11 +78,21 @@ def build(base_text):
     p.once('if(!["now","trade","journal","insights"].includes(v)) v="now";', 'if(!["now","trade","journal","insights","time"].includes(v)) v="now";', "setView list")
     p.once("""  if (v==="trade" && mcp && (!S.chain || S.chain.err || S.chain.ix!==S.ix)) loadChain(null); }""",
            """  if (v==="trade" && mcp && (!S.chain || S.chain.err || S.chain.ix!==S.ix)) loadChain(null);
-  if (v==="time") tmEnter(); }""", "setView hook")
-    p.once("  bind(); renderAll();\n  const C=window.claude;", "  bind(); tmBind(); renderAll();\n  const C=window.claude;", "boot bind")
+  if (v==="time") tmEnter();
+  if (v==="trade") tmGateSchedule(); }""", "setView hook")
+    p.once("  bind(); renderAll();\n  const C=window.claude;", "  bind(); tmBind(); tmDeskBind(); renderAll();\n  const C=window.claude;", "boot bind")
     p.once("""S.gap.err="Live data isn't available in this view."; renderAll(); return; } syncWatches(true); loadGapHistory(); watchUS(); if (S.view==="trade") loadChain(null);""",
-           """S.gap.err="Live data isn't available in this view."; renderAll(); if (S.view==="time") tmPrepare(); return; } syncWatches(true); loadGapHistory(); watchUS(); if (S.view==="trade") loadChain(null); if (S.view==="time") tmPrepare();""", "mcp arrives")
+           """S.gap.err="Live data isn't available in this view."; renderAll(); if (S.view==="time") tmPrepare(); return; } syncWatches(true); loadGapHistory(); watchUS(); if (S.view==="trade") loadChain(null); if (S.view==="time") tmPrepare(); lrnBackground();""", "mcp arrives")
     p.once('const APP_BUILD = "2026-10-06a";', 'const APP_BUILD = "%s";' % BUILD, "build")
+
+    # 4b. every plan goes through the Time Machine: the Trade tab's check, the journal's chip, the learning store
+    p.once('<div id="plan"></div>', '<div id="plan"></div>\n      <div id="tmGate" aria-live="polite"></div>', "gate markup")
+    p.once('function renderPlan(){\n  const e=num($("f_entry").value)', 'function renderPlan(){\n  tmGateSchedule();\n  const e=num($("f_entry").value)', "renderPlan hook")
+    p.once('  $("save").disabled=true;\n  try{ await db.collection("trades").doc().set(doc);',
+           '  const tmv=await tmBeforeSave(); if (tmv==="hold") return; if (tmv){ doc.tm=tmv.tm; if (tmv.id) doc.tmId=tmv.id; }\n  $("save").disabled=true;\n  try{ await db.collection("trades").doc().set(doc);', "save hook")
+    p.once('<div>${f}</div></td><td><button class="mini" data-jedit', '<div>${f}${tmChip(t)}</div></td><td><button class="mini" data-jedit', "journal chip")
+    p.once("function renderAll(){ detectClosed();", "function renderAll(){ lrnTradesTick(); detectClosed();", "renderAll hook")
+    p.once('    subUsage();\n    d.doc("meta/app")', '    lrnInit(d);\n    subUsage();\n    d.doc("meta/app")', "db init")
 
     # 5. the daily bars keep their volume (the setups score volume)
     p.once("close:+c.close})).filter(c=>c.open>0&&c.close>0);", "close:+c.close,volume:+c.volume||0})).filter(c=>c.open>0&&c.close>0);", "norm volume")
@@ -95,6 +105,13 @@ def build(base_text):
     p.once("On an index's expiry day after 13:30 no new buys of that week's options (use next week's). No new entries after 15:00; F&O trading ends 15:30.",
            "On an index's expiry day after ${S.rules.expiryCutoff} no new buys of that week's options (use next week's). No new entries after ${S.rules.noEntryAfter}; F&O trading ends 15:30.", "coach cutoffs")
     p.once("const prompt=`${COACH_RULES}\\n\\n", "const prompt=`${coachRules()}\\n\\n", "coach use")
+    p.once('Output: mobile-first, ≤10 short lines',
+           'Every setup you propose, and every trade you assess, MUST first be run through the time_machine tool (index, side, strike, lots, and your entry, SL, T1, T2). Quote its gate (pass, watch or fail) and its chance of profit next to the setup. Never grade a setup the tool rates fail as A or A+: say it fails the Time Machine. If the tool is unavailable, say the setup is unchecked.\nOutput: mobile-first, ≤10 short lines', "coach time machine rule")
+    p.once('If nothing qualifies or rules block entries, say so plainly.', 'Run each setup through the time_machine tool before showing it and drop any it rates fail. If nothing qualifies or rules block entries, say so plainly.', "coach scan ask")
+    p.once('  ];\n  let useTools=false;', """    {name:"time_machine",description:"Replay a proposed NIFTY or SENSEX option trade through this app's Time Machine: the desk plan on simulated and real candles, the option repriced every candle, after charges. Returns a gate (pass, watch or fail), the chance of a profit, of reaching T1 and of being stopped out, and the average result. Call it for every setup before presenting it. entry, sl, tp1 and tp2 are option premiums; omit them to use the live ask and the desk rules.",inputSchema:{type:"object",properties:{index:{type:"string",enum:["NIFTY","SENSEX"]},side:{type:"string",enum:["CE","PE"]},strike:{type:"integer"},expiry_date:{type:"string"},lots:{type:"integer"},entry:{type:"number"},sl:{type:"number"},tp1:{type:"number"},tp2:{type:"number"}},required:["index","side","strike"]},
+      execute:i=>wrap(()=>tmCoachTool(i))},
+  ];
+  let useTools=false;""", "coach tool")
     # the old hard-coded rules must be gone from the coach prompt
     for stale in ("Max 3 trades/day", "COACH_RULES"):
         if stale in p.s:

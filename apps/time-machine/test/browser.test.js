@@ -72,22 +72,38 @@ function installClaude(data, fakeIso) {
     get_us_stocks_details() { return {}; },
     lookup_ind_keys(inp) { return [{ ind_key: "INDS01052", name: "Reliance Industries" }, { ind_key: "INDS01338", name: "Reliance Power" }]; },
   };
-  const docs = new Map();
+  const docs = new Map(Object.entries(data.seed || {}));
   docs.set("trades/t1", data.trades[0]);
   docs.set("config/rules", { cap: null, maxTrades: 99, slPct: 10, tpMin: 15, tpMax: 20, dayStop: 3000, noEntryAfter: "15:00", expiryCutoff: "13:30", autoLog: false });
   const listeners = [];
   const snap = (path) => { const id = path.split("/").pop(); return { exists: docs.has(path), id, data: () => docs.get(path) }; };
   const collSnap = (name) => ({ docs: [...docs.entries()].filter(([p]) => p.startsWith(name + "/")).map(([p, d]) => ({ id: p.split("/")[1], data: () => d })) });
+  const notify = (path) => setTimeout(() => { for (const l of listeners) { if (l.doc === path) l.cb(snap(path)); else if (l.coll && path.startsWith(l.coll + "/")) l.cb(collSnap(l.coll)); } }, 0);
+  let auto = 0;
   const db = {
-    collection(name) { return { onSnapshot(cb) { setTimeout(() => cb(collSnap(name)), 0); return () => {}; }, doc: (id) => db.doc(name + "/" + id) }; },
-    doc(p) { return { onSnapshot(cb) { setTimeout(() => cb(snap(p)), 0); return () => {}; }, async get() { return snap(p); }, async set(d) { docs.set(p, d); }, async update(d) { docs.set(p, { ...(docs.get(p) || {}), ...d }); }, async delete() { docs.delete(p); } }; },
+    collection(name) { return { onSnapshot(cb) { listeners.push({ coll: name, cb }); setTimeout(() => cb(collSnap(name)), 0); return () => {}; }, doc: (id) => db.doc(name + "/" + (id || "auto" + ++auto)) }; },
+    doc(p) { return { onSnapshot(cb) { listeners.push({ doc: p, cb }); setTimeout(() => cb(snap(p)), 0); return () => {}; }, async get() { return snap(p); },
+      async set(d) { docs.set(p, JSON.parse(JSON.stringify(d))); notify(p); }, async update(d) { docs.set(p, { ...(docs.get(p) || {}), ...d }); notify(p); }, async delete() { docs.delete(p); notify(p); } }; },
   };
+  window.__docs = docs;
   const mcp = {
     async callTool(server, tool, input) { if (!tools[tool]) throw { code: "tool_error", message: "no stub for " + tool }; await new Promise((r) => setTimeout(r, 5)); return pack(tools[tool](input || {})); },
     watchTool(server, tool, input, handler) { setTimeout(() => { if (tools[tool]) handler({ type: "data", result: { ...pack(tools[tool](input || {})), cache: { storedAt: realDate.now() } } }); }, 0); return () => {}; },
     async invalidate() {},
   };
-  window.claude = { use: async (name) => ({ db, mcp, user: { can: async () => true }, sample: null }[name] || null) };
+  let sample = null;
+  if (data.coach) {
+    sample = async (prompt, opts) => {
+      window.__prompt = prompt;
+      const tool = ((opts && opts.tools) || []).find((t) => t.name === "time_machine");
+      const out = tool ? await tool.execute({ index: "NIFTY", side: "CE", strike: 22600, lots: 1 }) : "no tool";
+      window.__toolOut = out;
+      if (opts && opts.onText) opts.onText({ text: "TOOL " + String(out).slice(0, 80) });
+      return { text: "TOOL " + String(out).slice(0, 80) };
+    };
+    sample.limits = async () => ({ tools: true });
+  }
+  window.claude = { use: async (name) => ({ db, mcp, user: { can: async () => true }, sample }[name] || null) };
   window.__calls = [];
 }
 
@@ -107,7 +123,7 @@ async function main() {
     const errors = [];
     page.on("pageerror", (e) => errors.push("pageerror: " + e.message));
     page.on("console", (m) => { if (m.type() === "error") errors.push("console: " + m.text()); });
-    await page.addInitScript(`(${installClaude.toString()})(${JSON.stringify(DATA)}, ${JSON.stringify(fakeIso)})`);
+    await page.addInitScript(`(${installClaude.toString()})(${JSON.stringify({ ...DATA, seed: opts.seed || {}, coach: !!opts.coach })}, ${JSON.stringify(fakeIso)})`);
     await page.goto("file://" + path.resolve(PAGE));
     await page.waitForFunction(() => document.querySelectorAll("#nav button").length === 5);
     return { ctx, page, errors };
@@ -130,6 +146,8 @@ async function main() {
     check("closed-market run: result cards appear", /how the desk plan ends/i.test(txt) && /other ways to exit/i.test(txt) && /how sure is this/i.test(txt), txt.slice(0, 300));
     check("no NaN / undefined / Infinity in the result", textOK(txt), txt.match(/.{30}(NaN|undefined|Infinity|\[object).{30}/) + "");
     check("it says the session starts from the open with a chosen entry", /session from the open, entering at 09:30/.test(txt), txt.slice(0, 200));
+    check("the result carries the gate, the blend of the models and the candle size it chose", /(PASS|WATCH|FAIL)/.test(txt) && /blend of the models/i.test(txt) && /(auto|chosen): [15]-minute candles/.test(txt), txt.slice(0, 400));
+    check("the fan chart is labelled in clock times", /\b(09|1\d):\d\d\b/.test(await page.locator("#tmCharts").innerText()), await page.locator("#tmCharts").innerText());
     check("charts are drawn (stacked bars, histogram, fan)", (await page.locator("#tmOut svg").count()) >= 3, "svg count " + (await page.locator("#tmOut svg").count()));
     await page.click('#tm_view button[data-v="bootstrap"]');
     check("switching the model redraws the charts", /Bootstrap/.test(await page.locator("#tmCharts").innerText()), "charts text");
@@ -142,13 +160,13 @@ async function main() {
     const { ctx, page, errors } = await launch("2026-10-23T11:02:00+05:30");
     await page.click('#nav button[data-view="time"]');
     await page.waitForFunction(() => document.querySelectorAll("#tm_strike option").length >= 8, null, { timeout: 15000 });
-    check("live: the entry is the next bar", /next bar 11:05/.test(await page.locator("input#tm_entry").inputValue()), await page.locator("input#tm_entry").inputValue());
+    check("live: the entry is the next candle", /from the next candle/.test(await page.locator("input#tm_entry").inputValue()), await page.locator("input#tm_entry").inputValue());
     await page.selectOption("#tm_paths", "2000");
     await page.click("#tm_run");
     await page.waitForSelector("#tmOut .card", { timeout: 90000 });
     await page.waitForFunction(() => !document.querySelector("#tm_cancel"), null, { timeout: 90000 });
     const txt = await page.locator("#tmOut").innerText();
-    check("live run reports its start", /from 11:05 today/.test(txt), txt.slice(0, 200));
+    check("live run reports its start", /from about 11:0\d today/.test(txt), txt.slice(0, 200));
     check("live run: no NaN / undefined", textOK(txt), txt.match(/.{30}(NaN|undefined|Infinity|\[object).{30}/) + "");
     await shot(page, "B-live-desktop");
     // the open trade preset
@@ -199,6 +217,125 @@ async function main() {
     await shot(page, "D-phone-dark");
     if (SHOTS) { const cards = page.locator("#tmOut > .card"); for (let i = 0; i < (await cards.count()); i++) await cards.nth(i).screenshot({ path: path.join(SHOTS, "D-card" + i + ".png") }); await page.locator(".tm-ctl").screenshot({ path: path.join(SHOTS, "D-controls.png") }); }
     check("no console or page errors (phone, dark)", errors.length === 0, errors.join(" | "));
+    await ctx.close();
+  }
+
+  // ------------------------------------------------------------ E. candle size, the scan, and what the Time tab saves
+  {
+    const { ctx, page, errors } = await launch("2026-10-24T11:00:00+05:30");
+    await page.click('#nav button[data-view="time"]');
+    await page.waitForFunction(() => document.querySelectorAll("#tm_strike option").length >= 8, null, { timeout: 15000 });
+    check("the candle size can be chosen: auto, 1, 5 or 15 minutes", (await page.locator("#tm_step option").allInnerTexts()).join("|").match(/Auto.*1 minute.*5 minutes.*15 minutes/) !== null, (await page.locator("#tm_step option").allInnerTexts()).join("|"));
+    await page.selectOption("#tm_step", "1");
+    await page.selectOption("#tm_paths", "2000");
+    await page.click("#tm_run");
+    await page.waitForFunction(() => !document.querySelector("#tm_cancel") && /chosen: 1-minute candles/.test(document.querySelector("#tmOut").innerText), null, { timeout: 120000 });
+    let txt = await page.locator("#tmOut").innerText();
+    check("1-minute candles: the run says so, and nothing is NaN", /chosen: 1-minute candles/.test(txt) && textOK(txt), txt.slice(0, 300));
+    await page.selectOption("#tm_step", "15");
+    await page.click("#tm_run");
+    await page.waitForFunction(() => !document.querySelector("#tm_cancel") && /chosen: 15-minute candles/.test(document.querySelector("#tmOut").innerText), null, { timeout: 120000 });
+    check("15-minute candles run too", textOK(await page.locator("#tmOut").innerText()), "15 min");
+    // what the run left behind
+    await page.waitForFunction(() => window.__docs.has("tmlearn/state"), null, { timeout: 15000 });
+    const keys = await page.evaluate(() => [...window.__docs.keys()]);
+    check("full 5-minute sessions are saved as they arrive (the library grows a day a day)", ["2026-10-21", "2026-10-22", "2026-10-23"].every((d) => keys.includes("tmsess/NIFTY_" + d)) && !keys.includes("tmsess/NIFTY_2026-10-19"), keys.filter((k) => k.startsWith("tmsess")).join(","));
+    check("the run's pace observations wait for their tape (the next session, and the weekend gap)", keys.includes("tmobs/sess_NIFTY_2026-10-26") && keys.includes("tmobs/gap_NIFTY_2026-10-26"), keys.filter((k) => k.startsWith("tmobs")).join(","));
+    check("a Time-tab run is kept as a prediction to be settled", keys.some((k) => k.startsWith("tmpred/p_NIFTY_2026-10-26")), keys.filter((k) => k.startsWith("tmpred")).join(","));
+    const lt = await page.locator("#tmLearn").innerText();
+    check("the Learning card says what it knows, honestly", /what it has learned/i.test(lt) && /cannot learn where the market goes next/i.test(lt) && /Saved 5-minute sessions/.test(lt) && textOK(lt), lt.slice(0, 400));
+    // the scan
+    await page.click("#tm_scan");
+    await page.waitForFunction(() => !document.querySelector("#tm_scancancel") && document.querySelectorAll("#tmScanOut tr").length > 3, null, { timeout: 180000 });
+    const st = await page.locator("#tmScanOut").innerText();
+    check("the scan ranks contracts of both indices with a gate each", /NIFTY/.test(st) && /SENSEX/.test(st) && /(PASS|WATCH|FAIL)/.test(st) && /pass · \d+ watch · \d+ fail/.test(st) && textOK(st), st.slice(0, 500));
+    check("when nothing passes the scan says so plainly", /Nothing passes right now/.test(st) || /PASS/.test(st), st.slice(0, 200));
+    await shot(page, "E-scan");
+    await page.locator("button[data-scanrun]").first().click();
+    await page.waitForFunction(() => !document.querySelector("#tm_cancel") && /how the desk plan ends/i.test(document.querySelector("#tmOut").innerText), null, { timeout: 120000 });
+    check("a scan row opens its full replay", textOK(await page.locator("#tmOut").innerText()), "full replay");
+    await page.waitForTimeout(3200);
+    const state = await page.evaluate(() => JSON.parse(window.__docs.get("tmlearn/state").json));
+    check("the learner's state is saved as one document", state.v === 1 && Array.isArray(state.log) && Object.keys(state.perf).length >= 1, JSON.stringify(Object.keys(state)));
+    await page.click("#lrn_freeze");
+    await page.waitForTimeout(3200);
+    check("freezing is saved", (await page.evaluate(() => JSON.parse(window.__docs.get("tmlearn/state").json).frozen)) === true && /Resume learning/.test(await page.locator("#tmLearn").innerText()), "frozen");
+    await shot(page, "E-learning");
+    check("no console or page errors (candles, scan, learning)", errors.length === 0, errors.join(" | "));
+    await ctx.close();
+  }
+  // ------------------------------------------------------------ F. the Trade tab checks every plan, and a failing one needs a second tap
+  {
+    const { ctx, page, errors } = await launch("2026-10-23T11:02:00+05:30");
+    await page.click('#nav button[data-view="trade"]');
+    await page.waitForSelector("#chain button[data-pick]", { timeout: 15000 });
+    check("before a contract is picked there is nothing to check", (await page.locator("#tmGate").innerHTML()).trim() === "", await page.locator("#tmGate").innerHTML());
+    await page.locator('#chain tr.atm button[data-side="CE"]').click();
+    await page.waitForSelector("#tmGate .tmg-chip", { timeout: 60000 });
+    let g = await page.locator("#tmGate").innerText();
+    const gate = (g.match(/\b(PASS|WATCH|FAIL)\b/) || [])[1];
+    check("picking a contract runs the Time Machine on the plan, with the gate, the odds and the candle size", !!gate && /Chance of a profit/.test(g) && /reaches T1/.test(g) && /-minute candles/.test(g) && textOK(g), g.slice(0, 400));
+    check("it names the plan it checked (entry, stop, targets)", /Your levels: entry/.test(g) && /stop .*\(−10%\)/.test(g), g);
+    await shot(page, "F-trade-gate");
+    const btn = () => page.locator("#save").innerText();
+    check("the Log button says so when the gate fails", gate !== "FAIL" || /Log anyway/.test(await btn()), await btn());
+    await page.click("#save");
+    await page.waitForFunction(() => /Logged\./.test(document.querySelector("#saveMsg").textContent) || /Log anyway/.test(document.querySelector("#saveMsg").textContent), null, { timeout: 60000 });
+    let msg = await page.locator("#saveMsg").innerText();
+    if (gate === "FAIL") {
+      check("a failing plan is not logged on the first tap: it asks for a second", /Time Machine finds this plan negative after charges/.test(msg) && !/Logged\./.test(msg), msg);
+      const n1 = await page.evaluate(() => [...window.__docs.keys()].filter((k) => k.startsWith("trades/auto")).length);
+      check("nothing was written yet", n1 === 0, "trades written " + n1);
+      await page.click("#save");
+      await page.waitForFunction(() => /Logged\./.test(document.querySelector("#saveMsg").textContent), null, { timeout: 30000 });
+    }
+    const tr = await page.evaluate(() => [...window.__docs.entries()].filter(([k]) => k.startsWith("trades/auto")).map(([, v]) => v));
+    check("the logged trade carries the check it was given", tr.length === 1 && tr[0].tm && ["pass", "watch", "fail"].includes(tr[0].tm.gate) && tr[0].tm.gate === gate.toLowerCase() && tr[0].tm.pred && tr[0].tm.pred.levels && !!tr[0].tmId, JSON.stringify(tr[0] && tr[0].tm).slice(0, 300));
+    check("a failing plan that was logged anyway is marked as such", gate !== "FAIL" || tr[0].tm.overridden === true, JSON.stringify(tr[0].tm).slice(0, 200));
+    check("the stored check is plain data (no undefined, no NaN)", !/undefined|NaN/.test(JSON.stringify(tr[0])), "doc");
+    await page.click('#nav button[data-view="journal"]');
+    await page.waitForFunction(() => /TM (pass|watch|fail)/.test(document.querySelector("#journal").innerText), null, { timeout: 15000 });
+    check("the journal shows the check beside the trade", /TM (pass|watch|fail)/.test(await page.locator("#journal").innerText()), await page.locator("#journal").innerText());
+    check("no console or page errors (trade tab)", errors.length === 0, errors.join(" | "));
+    await ctx.close();
+  }
+  // ------------------------------------------------------------ G. what was waiting for a tape is settled when the tape is saved
+  {
+    const T = require("../src/tmx-core.js"), I = require("../src/tmx-intraday.js"), L = require("../src/tmx-learn.js");
+    const sessions = I.parseBars(csv("NIFTY-5m.csv"));
+    const chain = T.parseChain(JSON.parse(fs.readFileSync(path.join(FIX, "indmoney-chain-NIFTY-20261027-eod23.json"), "utf8")));
+    chain.spot_time = "2026-10-22T09:30:00+05:30"; T.chainAnalytics(chain, Date.parse("2026-10-23T15:46:00+05:30"), 0.065);
+    const rep = await I.analyseIntraday({ sessions: sessions.filter((x) => x.date < "2026-10-22"), chain, daily: T.loadCandles(csv("NIFTY-1d.csv")), side: "PE", strike: 22600, lots: 1, nowMs: Date.parse("2026-10-22T09:31:00+05:30"),
+      holidays: new Set(["2026-10-20", "2026-11-10"]), step: 5, paths: 400, seed: 1, sensitivity: false, entryPrice: 130 });
+    const pred = L.predictionFrom(rep, { id: "p_seed", ix: "NIFTY", kind: "scan" });
+    const seed = {
+      "tmobs/sess_NIFTY_2026-10-22": { ix: "NIFTY", kind: "sess", day: "2026-10-22", m5: 105, pred: 0.00001, at: "2026-10-22T06:00:00Z", done: false },
+      "tmobs/gap_NIFTY_2026-10-23": { ix: "NIFTY", kind: "gap", day: "2026-10-23", m5: 0, pred: 0.00004, at: "2026-10-22T16:00:00Z", done: false },
+      "tmpred/p_seed": { ix: "NIFTY", day: "2026-10-22", kind: "scan", done: false, at: "2026-10-22T04:00:00Z", json: JSON.stringify(pred) },
+    };
+    const { ctx, page, errors } = await launch("2026-10-24T11:00:00+05:30", { seed });
+    await page.click('#nav button[data-view="time"]');
+    await page.waitForFunction(() => !window.__docs.has("tmobs/sess_NIFTY_2026-10-22") && !window.__docs.has("tmobs/gap_NIFTY_2026-10-23") && window.__docs.get("tmpred/p_seed") && window.__docs.get("tmpred/p_seed").done === true, null, { timeout: 30000 });
+    check("an observation and a prediction are settled once the full session is saved, and the observation is removed", true, "");
+    await page.waitForFunction(() => window.__docs.has("tmlearn/state"), null, { timeout: 15000 });
+    const st = await page.evaluate(() => JSON.parse(window.__docs.get("tmlearn/state").json));
+    check("the learner recorded the pace observation and the settled prediction, once each", st.pace.NIFTY && st.pace.NIFTY.sess.length === 1 && st.pace.NIFTY.gap.length === 1 && st.calib.profit.length === 1 && st.seen.includes("sess_NIFTY_2026-10-22") && st.seen.includes("gap_NIFTY_2026-10-23") && st.seen.includes("out:paper:p_seed"), JSON.stringify(st).slice(0, 400));
+    const lt = await page.locator("#tmLearn").innerText();
+    check("the Learning card shows one settled prediction and the pace so far", /×1\.\d\d|×0\.\d\d/.test(lt) && /1 observation|1 obs/.test(lt) && textOK(lt), lt.slice(0, 600));
+    check("no console or page errors (settling)", errors.length === 0, errors.join(" | "));
+    await ctx.close();
+  }
+  // ------------------------------------------------------------ H. the coach runs every setup through the Time Machine
+  {
+    const { ctx, page, errors } = await launch("2026-10-23T11:02:00+05:30", { coach: true });
+    await page.click('button[data-ask="scan"]');
+    await page.waitForFunction(() => window.__toolOut !== undefined, null, { timeout: 90000 });
+    const out = await page.evaluate(() => window.__toolOut), prompt = await page.evaluate(() => window.__prompt);
+    let j = null; try { j = JSON.parse(out).time_machine; } catch {}
+    check("the coach has a time_machine tool and it answers with a gate and odds", !!j && ["pass", "watch", "fail"].includes(j.gate) && j.chance_of_profit_pct >= 0 && j.chance_of_profit_pct <= 100 && !!j.reason, String(out).slice(0, 300));
+    check("the coach's rules and its scan request both require the check", /MUST first be run through the time_machine tool/.test(prompt) && /Run each setup through the time_machine tool/.test(prompt), prompt.slice(0, 200));
+    check("the coach's rules still follow the saved settings (no stale 3 trades a day)", !/Max 3 trades\/day/.test(prompt) && /No fixed limit on trades per day/.test(prompt), "rules");
+    check("no console or page errors (coach)", errors.length === 0, errors.join(" | "));
     await ctx.close();
   }
   await browser.close();

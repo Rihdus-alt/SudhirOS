@@ -170,7 +170,7 @@
       if (v && v.n) models[k] = { profit: v.p_profit, t1: v.p_hit_t1, stop: v.p_stop, exp: v.expectancy, n: v.n };
     }
     const spec = Object.assign({}, m.spec, { m0: Math.ceil(((rep.models.implied || {}).entry_minute || m.entry_min) / 5) * 5 });
-    const E = (rep.models.implied && rep.models.implied.entry) || m.entry_plan;
+    const E = m.start.kind === "open" ? null : (rep.models.implied && rep.models.implied.entry) || m.entry_plan;     // from the open the fill is whatever the open gives
     return Object.assign({ day: m.start.day, kind: "scan", spec, E, lots: m.lots, rules: { slPct: rep.rules.slPct, tp1Pct: rep.rules.tp1Pct, tp2Pct: rep.rules.tp2Pct, breathPct: rep.rules.breathPct },
       levels: { sl: rep.levels.sl, t1: rep.levels.t1, t2: rep.levels.t2 }, step: m.step, models, blend: rep.blend ? { profit: rep.blend.p_profit, t1: rep.blend.p_hit_t1, stop: rep.blend.p_stop, exp: rep.blend.expectancy } : null }, extra || {});
   }

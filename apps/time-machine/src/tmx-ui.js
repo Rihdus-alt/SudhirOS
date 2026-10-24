@@ -8,8 +8,8 @@ const TMSYM = {
 };
 const TM = {
   mode: "intra", busy: false, runId: 0, cancel: false, cache: new Map(), exp: {}, ch: null, sessions: null, view: "implied", sview: "bootstrap",
-  other: null, found: null, status: "", err: "", progress: 0,
-  f: { ix: "NIFTY", expiry: "", side: "CE", strike: "", lots: 2, entryAt: "09:30", paths: 4000, volMode: "realised", iv: "", pos: null,
+  other: null, found: null, status: "", err: "", progress: 0, scan: null,
+  f: { ix: "NIFTY", expiry: "", side: "CE", strike: "", lots: 2, entryAt: "09:30", paths: "auto", step: "auto", volMode: "realised", iv: "", pos: null, plan: null, useId: null,
     sym: "NIFTY", dir: "auto", inst: "both", slots: 1, qty: 10, spaths: 10000, horizon: 40, sexpiry: "", sl: "", tp1: "", tp2: "", limit: "", siv: "",
     drift: false, grid: false },
   out: { intra: null, swing: null },
@@ -22,7 +22,7 @@ const pc0 = (x) => x == null || isNaN(x) ? "—" : Math.round(100 * x) + "%";
 const rR = (x) => x == null || isNaN(x) ? "—" : (x >= 0 ? "+" : "−") + Math.abs(x).toFixed(2) + "R";
 const rR3 = (x) => x == null || isNaN(x) ? "—" : (x >= 0 ? "+" : "−") + Math.abs(x).toFixed(3) + "R";
 const inrA = (n) => inr(n, false);
-const tmSave = () => { try { localStorage.setItem("desk.tm", JSON.stringify({ mode: TM.mode, f: { ...TM.f, pos: null } })); } catch {} };
+const tmSave = () => { try { localStorage.setItem("desk.tm", JSON.stringify({ mode: TM.mode, f: { ...TM.f, pos: null, plan: null, useId: null } })); } catch {} };
 const tmCached = (key, ttl, fn) => {
   const c = TM.cache.get(key);
   if (c && Date.now() - c.at < ttl) return c.p;
@@ -60,7 +60,7 @@ const tmErr = (e) => e && e.code ? errInfo(e).long : (e && e.message) || "Someth
 // ----- controls
 function tmLead() {
   $("tmLead").textContent = TM.mode === "intra"
-    ? "Your desk plan (SL, T1, T2, the trailing ladder, out by 15:15) replayed on 5-minute bars, with the option repriced every bar. It counts how the trade ends; it does not predict the next move."
+    ? "Your desk plan (SL, T1, T2, the trailing ladder, out by 15:15) replayed on candles of the size that suits its stop, with the option repriced every candle. It counts how the trade ends; it does not predict the next move. Every plan you write on the Trade tab goes through the same engine."
     : "A daily-bar trade (ATR stops, TP1/TP2, a trailing stop) in futures, an option or shares, replayed through the chart's own history, a bootstrap of its real days and the volatility the option chain prices.";
 }
 const tmOpt = (v, label, cur) => `<option value="${esc(v)}" ${String(v) === String(cur) ? "selected" : ""}>${esc(label)}</option>`;
@@ -79,7 +79,6 @@ function tmIntraCtl() {
     return tmOpt(r.strike, `${r.strike} · ₹${g.ask || g.ltp}${dl != null ? " · Δ" + dl.toFixed(2) : ""}`, f.strike);
   }).join("");
   const times = ["09:20", "09:30", "09:45", "10:00", "10:15", "10:30", "11:00", "11:30", "12:00", "13:00", "14:00", "14:30", "15:00"];
-  const t = ist(), nextBar = TMi.hm(Math.max(0, Math.ceil((t.mins - 555) / 5)));
   const trades = tmOpenTrades();
   const picked = S.pick && S.pick.key;
   const pos = f.pos;
@@ -99,18 +98,21 @@ function tmIntraCtl() {
       <div><label for="tm_strike">Strike</label><select id="tm_strike" ${pos ? "disabled" : ""}>${strikeOpts || "<option>loading…</option>"}</select></div>
       <div><label for="tm_lots">Lots ${ch ? `<span class="muted">× ${ch.lot_size || S.rules.lotSizes[f.ix]}</span>` : ""}</label><input id="tm_lots" type="number" min="1" inputmode="numeric" value="${esc(pos ? pos.remainingLots : f.lots)}" ${pos ? "disabled" : ""}></div>
       <div><label for="tm_entry">Entry</label>${open
-        ? `<input id="tm_entry" value="live: next bar ${nextBar}" disabled>`
-        : `<select id="tm_entry" aria-label="Entry time">${times.filter((x) => TMi.barOf(x) <= TMi.barOf(rules.noEntryAfter)).map((x) => tmOpt(x, "next session, " + x, f.entryAt)).join("")}</select>`}</div>
-      <div><label for="tm_paths">Paths</label><select id="tm_paths">${[[2000, "2,000 (quick)"], [4000, "4,000"], [10000, "10,000"]].map(([v, l]) => tmOpt(v, l, f.paths)).join("")}</select></div>
+        ? `<input id="tm_entry" value="live: from the next candle" disabled>`
+        : `<select id="tm_entry" aria-label="Entry time">${times.filter((x) => TMi.minOf(x) <= TMi.minOf(rules.noEntryAfter)).map((x) => tmOpt(x, "next session, " + x, f.entryAt)).join("")}</select>`}</div>
+      <div><label for="tm_step">Candles</label><select id="tm_step" aria-label="Candle size">${[["auto", "Auto (best for the stop)"], [1, "1 minute"], [5, "5 minutes"], [15, "15 minutes"]].map(([v, l]) => tmOpt(v, l, f.step)).join("")}</select></div>
+      <div><label for="tm_paths">Paths</label><select id="tm_paths">${[["auto", "Auto (until pinned down)"], [2000, "2,000 (quick)"], [4000, "4,000"], [10000, "10,000"]].map(([v, l]) => tmOpt(v, l, f.paths)).join("")}</select></div>
     </div>
     <details style="margin-top:8px"><summary class="small muted">Options</summary>
       <div class="form" style="margin-top:8px">
         <div><label for="tm_vol">Recent-bars model runs at</label><select id="tm_vol">${tmOpt("realised", "the recent realised pace", f.volMode)}${tmOpt("implied", "the option's implied pace", f.volMode)}</select></div>
         <div><label for="tm_iv">IV override, % a year</label><input id="tm_iv" type="number" step="0.1" inputmode="decimal" placeholder="the chain's" value="${esc(f.iv)}"></div>
       </div>
-      <div class="small muted" style="margin-top:6px">Rules come from your saved settings: SL ${rules.slPct}%, T1 +${rules.tp1Pct}%, T2 +${rules.tp2Pct}%, no entries after ${rules.noEntryAfter}, day stop ${inrA(rules.dayStop)}, out at 15:15.</div>
+      <div class="small muted" style="margin-top:6px">Rules come from your saved settings: SL ${rules.slPct}%, T1 +${rules.tp1Pct}%, T2 +${rules.tp2Pct}%, no entries after ${rules.noEntryAfter}, day stop ${inrA(rules.dayStop)}, out at 15:15. "Auto" candles are 1 minute when the stop is within about three typical 5-minute moves (a candle that touches both levels is then rare), 5 minutes otherwise.</div>
     </details>
+    ${f.plan && !pos ? `<div class="tm-pos small"><b>Using your plan from the Trade tab</b> · entry ${px(f.plan.entry)} · stop ${px(f.plan.sl)} · T1 ${px(f.plan.tp1)} · T2 ${px(f.plan.tp2)}<button class="mini" id="tm_clearplan" style="margin-left:8px">Use the desk rules instead</button></div>` : ""}
     <div class="row" style="margin-top:10px"><button class="primary" id="tm_run" ${TM.busy ? "disabled" : ""}>${TM.busy ? "Replaying…" : pos ? "Replay what happens next" : "Replay the trade"}</button>
+      ${pos ? "" : `<button id="tm_scan" ${TM.busy || (TM.scan && TM.scan.running) ? "disabled" : ""} title="Replay the contracts near the money and rank them">Scan NIFTY and SENSEX</button>`}
       ${TM.busy ? `<button id="tm_cancel">Stop</button>` : ""}<span class="small muted tm-status" id="tm_status">${esc(TM.status)}</span></div>
     <div class="tm-prog" ${TM.busy ? "" : "hidden"}><div id="tm_prog" style="width:${Math.round(100 * TM.progress)}%"></div></div>
     ${TM.err ? `<div class="small down" style="margin-top:6px">${esc(TM.err)}</div>` : ""}`;
@@ -158,6 +160,7 @@ function tmRender() {
   $("tmOut").innerHTML = "";
   const o = TM.out[TM.mode];
   if (o) tmShow(o);
+  tmScanRender(); lrnRender();
 }
 const tmStatus = (msg) => { TM.status = msg; const el = $("tm_status"); if (el) el.textContent = msg; };
 const tmProg = (p, label) => { TM.progress = p; const el = $("tm_prog"); if (el) el.style.width = Math.round(100 * p) + "%"; if (label) tmStatus("Replaying " + label + "…"); };
@@ -170,7 +173,13 @@ async function tmPrepare() {
     if (TM.mode === "intra") {
       const f = TM.f, key = TMSYM[f.ix].key;
       if (!f.pos) await tmLoadIntraChain(f.ix, f.expiry || null);
-      tm5m(key).then((s) => { TM.sessions = s; }).catch(() => {});
+      if (f.useId && TM.ch) {            // arriving from the Trade tab with a contract: find its strike in the chain
+        const row = TM.ch.strikes.find((r) => (r.ce && r.ce.id === f.useId) || (r.pe && r.pe.id === f.useId));
+        if (row) { f.strike = row.strike; f.side = row.ce && row.ce.id === f.useId ? "CE" : "PE"; }
+        f.useId = null;
+      }
+      tm5m(key).then((s) => { TM.sessions = s; lrnAbsorb(f.ix, s, null); }).catch(() => {});
+      tmDaily(key).then((d) => lrnAbsorb(f.ix, null, d)).catch(() => {});
     } else {
       const f = TM.f, sy = f.sym === (TM.other && TM.other.sym) ? TM.other : TMSYM[f.sym];
       if (sy && f.inst !== "equity" && f.inst !== "future") {
@@ -228,20 +237,15 @@ async function tmRun() {
   if (ok) { try { $("tmOut").scrollIntoView({ block: "start", behavior: "smooth" }); } catch {} }
 }
 async function tmRunIntra(opts, id) {
-  const f = TM.f, key = TMSYM[f.ix].key, pos = f.pos;
-  const ch = await tmChain(key, f.expiry || null, true);
-  const [sessions, daily] = await Promise.all([tm5m(key), tmDaily(key)]);
-  TM.ch = ch; TM.sessions = sessions;
-  const t = ist(), live = marketOpen();
-  if (live) { const ct = TMa.chainTimeMs(ch); if (ct && Date.now() - ct > 20 * 60e3) throw new Error("The quote is " + Math.round((Date.now() - ct) / 60e3) + " minutes old: refresh and try again."); }
-  const base = { sessions, chain: ch, daily, nowMs: Date.now(), holidays: tmHol(), rules: tmRules(), paths: +f.paths, seed: 7, volMode: f.volMode,
-    ivPct: f.iv ? +f.iv : null, entryAt: f.entryAt, ...opts };
-  tmStatus("Replaying…");
-  const rep = pos
-    ? await TMi.analyseIntraday({ ...base, mode: "position", derivativeId: pos.id, lots: pos.remainingLots, position: { entry: pos.entry, stop: pos.stop, t1Done: pos.t1Done, remainingLots: pos.remainingLots } })
-    : await TMi.analyseIntraday({ ...base, side: f.side, strike: +f.strike, lots: Math.max(1, +f.lots || 1) });
+  const f = TM.f, pos = f.pos, plan = f.plan && !pos ? f.plan : null;
+  const auto = f.paths === "auto";
+  const rep = await tmAnalyse({ ix: f.ix, expiry: f.expiry || null, side: f.side, strike: +f.strike, lots: pos ? pos.remainingLots : Math.max(1, +f.lots || 1), pos,
+    entry: plan ? plan.entry : null, rules: plan ? tmRulesFor(plan) : tmRules(), step: f.step, paths: f.paths, budget: auto ? 9000 : 0, minPaths: 2000, maxPaths: 12000,
+    entryAt: f.entryAt, volMode: f.volMode, ivPct: f.iv ? +f.iv : null, kind: "run", record: !pos, ...opts });
   if (id !== TM.runId) return;
-  rep.ctx = { barRange: tmBarRange(sessions), day: t.date, room: roomLeft(dayTrades(t.date)), ix: f.ix, at: Date.now() };
+  TM.ch = await tmChain(TMSYM[f.ix].key, f.expiry || null);
+  const sessions = TM.sessions || lrnSessions(f.ix);
+  Object.assign(rep.ctx, { barRange: tmBarRange(sessions), room: roomLeft(dayTrades(ist().date)) });
   TM.out.intra = rep;
 }
 async function tmRunSwing(opts, id) {
@@ -292,7 +296,7 @@ function tmIntraHTML(rep) {
   const sims = keys.filter((k) => k !== "replay");
   const D = (k) => rep.models[k].variants.desk;
   const title = `${m.underlying || ""} ${m.strike} ${m.side === "CE" ? "Call" : "Put"} · ${m.lots} lot${m.lots > 1 ? "s" : ""} (${m.qty})`;
-  const word = (k) => tmWord(D(k));
+  const word = (k) => tmWord(D(k)), odds = tmOdds(rep);
   const chip = (k) => `<span class="tm-chip ${mc[k]}">${names[k]}</span>`;
   const by = (fn) => keys.map((k) => `<i>${fn(D(k), k)}</i> ${names[k]}${k === "replay" ? " (n=" + rep.models[k].n + ")" : ""}`).join("<br>");
   const unit = pos ? "vs selling now" : "";
@@ -307,10 +311,16 @@ function tmIntraHTML(rep) {
       <div class="stat"><span>${pos ? "Plan beats selling now" : "Chance of a profit"}</span><b>${pc0(D(keys[0]).p_profit)}${keys.length > 1 ? "–" + pc0(D(keys[1]).p_profit) : ""}</b><span class="by">${by((v) => pc0(v.p_profit))}</span></div>
       <div class="stat"><span>Average result ${unit}</span><b class="${cls(D(keys[0]).expectancy)}">${inr(D(keys[0]).expectancy)}</b><span class="by">${by((v) => inr(v.expectancy))}</span></div>
       <div class="stat"><span>${pos ? "Reaches T1" : "Reaches T1 (+" + rep.rules.tp1Pct + "%)"}</span><b>${pc0(D(keys[0]).p_hit_t1)}</b><span class="by">${by((v) => pc0(v.p_hit_t1))}</span></div>
+      ${odds ? `<div class="stat"><span>Blend of the models</span><b>${pc0(odds.profit.now)}</b><span class="by">chance of a profit${odds.profit.adj != null ? " (models said " + pc0(odds.profit.raw) + ")" : ""}<br>reaches T1 ${pc0(odds.t1.now)} · stopped out ${pc0(odds.stop.now)}<br>average ${inr(odds.exp)} ± ${inrA(1.96 * odds.se)}</span></div>` : ""}
       ${pos ? "" : `<div class="stat"><span>Loses ≥ ${inrA(rep.rules.dayStop)} (day stop)</span><b class="${D(keys[0]).p_day_stop > 0.1 ? "down" : ""}">${pc0(D(keys[0]).p_day_stop)}</b><span class="by">${by((v) => pc0(v.p_day_stop))}</span></div>`}
     </div>`;
   // what stands out
-  const notes = [];
+  const notes = [esc(m.step_note)];
+  const ln = rep.learn;
+  if (ln && (ln.volMult !== 1 || ln.gapMult !== 1 || ln.weightsLearned || Object.values(ln.calibration).some((c) => c.applied))) {
+    notes.push("Using what this app has learned: " + [ln.volMult !== 1 ? `the market's pace is set at ×${ln.volMult.toFixed(2)} the option's` : "", ln.gapMult !== 1 ? `the overnight gap at ×${ln.gapMult.toFixed(2)}` : "",
+      ln.weightsLearned ? "the models are weighted by how close they have been" : "", Object.values(ln.calibration).some((c) => c.applied) ? "the odds are corrected for how they have fared on real tapes" : ""].filter(Boolean).join("; ") + ". Details under “What it has learned” below.");
+  }
   const ipts = lv.risk_inr / m.qty / Math.max(Math.abs(m.delta), 0.05);
   if (!pos) {
     const br = rep.ctx && rep.ctx.barRange;
@@ -330,7 +340,7 @@ function tmIntraHTML(rep) {
   if (rep.ctx && rep.ctx.room != null && !pos) notes.push(`Room left to today's ${inrA(rep.rules.dayStop)} stop: <b>${inrA(rep.ctx.room)}</b>. The plan's loss at the stop is about ${inrA(lv.risk_inr)} plus charges.`);
   for (const n of rep.notes || []) notes.push(esc(n));
   const head1 = `<div class="card">
-      <div class="row" style="justify-content:space-between"><h2 style="margin:0">${esc(title)}</h2><span class="small muted">${esc(m.startLabel)}</span></div>
+      <div class="row" style="justify-content:space-between"><div class="row"><h2 style="margin:0">${esc(title)}</h2>${rep.gate ? `<span class="tm-chip tmg-${rep.gate.gate}" title="${esc(rep.gate.reason)}">${tmGateName[rep.gate.gate]}</span>` : ""}</div><span class="small muted">${esc(m.startLabel)}</span></div>
       <div class="small muted" style="margin-top:2px">${pos ? `Entry ${px(m.position.entry)}, stop ${px(m.position.stop)}${m.position.t1Done ? ", T1 done" : ""}; the option sells at ${px(m.bid_now)} now.` :
         `Entry about ${px(m.entry_plan)} (the ask) · SL ${px(lv.sl)} · T1 ${px(lv.t1)} · T2 ${px(lv.t2)} · outlay ${inrA(m.outlay)} · ${esc(m.underlying)} ${px(m.spot0)}, ${m.days_to_expiry === 0 ? "expires today" : m.days_to_expiry + " day" + (m.days_to_expiry > 1 ? "s" : "") + " to expiry"}`}</div>
       ${tiles}
@@ -384,13 +394,13 @@ function tmIntraHTML(rep) {
       <ul class="tm-notes">
         <li>Each probability carries a 95% interval from the number of paths (shown under it above). It does not include the models being wrong.</li>
         <li>The recent sessions row replays ${rep.models.replay && rep.models.replay.n ? rep.models.replay.independent + " real sessions' 5-minute tapes" : "no session"}: it shows what really happened on those days, with the option repriced, but the paths overlap and ${rep.models.replay && rep.models.replay.n ? "two or three sessions" : "it"} cannot support a probability.</li>
-        <li>Inside a 5-minute bar the order of the high and low is unknown: a bar that touches both the stop and a target counts as the stop.</li>
+        <li>Inside a ${m.step}-minute candle the order of the high and low is unknown: a candle that touches both the stop and a target counts as the stop. Finer candles make that rarer, which is why "Auto" picks 1 minute for a close stop.</li>
         <li>Stops and targets are checked on the price you could sell at (the bid) and fill there; stop-loss orders can slip further in a fast market. Charges are counted per order.</li>
       </ul>
       <details style="margin-top:6px"><summary class="small muted">How this was worked out</summary>
         <div class="tm-fine" style="margin-top:6px">
           <p>Volatility is solved from the quote's mid on a session clock: an option's IV is quoted on calendar time, but variance arrives mostly in the session (a U shape: ${esc(m.profile)}) and the rest overnight as the opening gap. Solved on that clock the chain's ${m.sigma_calendar_pct.toFixed(1)}% a year is ${m.sigma_clock_pct.toFixed(1)}%${m.iv_overridden ? " (overridden)" : ""}. The index paths spend variance on the same clock, so the option's price is a martingale along them: no drift is invented (the tests check this).</p>
-          <p>Implied: Gaussian 5-minute bars, each bridged for its high and low. Bootstrap: real 5-minute bars (their shapes, fat tails and clustering) reshuffled in blocks of about 30 minutes with the drift taken out. Recent sessions: the actual tapes of the last full sessions, started up to 30 minutes either side of this start, scaled to today's level.</p>
+          <p>Implied: Gaussian ${m.step}-minute candles, each bridged for its high and low. Bootstrap: real 5-minute bars (their shapes, fat tails and clustering) reshuffled in blocks of about 30 minutes with the drift taken out${m.step === 1 ? "; at 1 minute each real bar is split into minutes that keep its own open, high, low and close" : m.step === 15 ? "; regrouped into 15-minute candles" : ""}. Recent sessions: the actual tapes of the last full sessions (5-minute, the finest the data gives), started up to 30 minutes either side of this start, scaled to today's level.</p>
           <p>The option is bought at the ask and sold at the bid (half the quoted spread each way, held constant); the forward keeps today's basis to the index; Black-76 on the NSE/BSE calendar; European exercise; nothing is held past 15:15.</p>
         </div>
       </details>
@@ -402,7 +412,7 @@ function tmIntraCharts(rep) {
   const names = { implied: "Implied", bootstrap: "Bootstrap", replay: "Recent sessions" };
   if (!keys.includes(TM.view)) TM.view = keys[0];
   const M = rep.models[TM.view], v = M.variants.desk, pos = m.mode === "position";
-  const start = TMi.barOf(m.barsFrom), xlab = (i) => TMi.hm(start + i);
+  const xlab = (i) => TMi.hm((M.fan_start_min || 0) + i * (M.fan_step_min || 5));
   const levels = pos ? [{ y: m.position.stop, label: "stop " + m.position.stop.toFixed(1), cls: "sl" }, { y: lv.t1, label: "T1 " + lv.t1.toFixed(1), cls: "tp" }, { y: lv.t2, label: "T2 " + lv.t2.toFixed(1), cls: "tp" }, { y: m.position.entry, label: "entry " + m.position.entry.toFixed(1), cls: "en" }]
     : [{ y: lv.sl, label: "SL " + lv.sl.toFixed(1), cls: "sl" }, { y: lv.t1, label: "T1 " + lv.t1.toFixed(1), cls: "tp" }, { y: lv.t2, label: "T2 " + lv.t2.toFixed(1), cls: "tp" }, { y: m.entry_plan, label: "entry " + m.entry_plan.toFixed(1), cls: "en" }];
   const seg = `<div class="seg" id="tm_view">${keys.map((k) => `<button data-v="${k}" class="${TM.view === k ? "on" : ""}">${names[k]}</button>`).join("")}</div>`;
@@ -528,7 +538,8 @@ function tmSummaryText() {
   if (TM.mode === "intra") {
     const m = rep.meta, keys = ["implied", "bootstrap", "replay"].filter((k) => rep.models[k] && rep.models[k].variants), L = [];
     L.push(`Time Machine (intraday) · ${m.underlying} ${m.strike} ${m.side} · ${m.lots} lot(s) · ${m.startLabel}`);
-    L.push(`Entry ~${m.entry_plan.toFixed(2)} · SL ${rep.levels.sl} · T1 ${rep.levels.t1} · T2 ${rep.levels.t2}`);
+    L.push(`Entry ~${m.entry_plan.toFixed(2)} · SL ${rep.levels.sl} · T1 ${rep.levels.t1} · T2 ${rep.levels.t2} · ${m.step}-minute candles`);
+    if (rep.gate) L.push(`Gate: ${rep.gate.gate.toUpperCase()} · ${rep.gate.reason}`);
     for (const k of keys) { const v = rep.models[k].variants.desk; L.push(`${k}: avg ${inr(v.expectancy)} ± ${inrA(1.96 * v.se)}, profit ${pc0(v.p_profit)}, T1 ${pc0(v.p_hit_t1)}${v.p_day_stop != null ? ", loses ≥ day stop " + pc0(v.p_day_stop) : ""} (n=${rep.models[k].n})`); }
     L.push("Models, not forecasts. Not financial advice.");
     return L.join("\n");
@@ -586,6 +597,8 @@ function tmBind() {
     const pb = t.closest("button[data-pos]"); if (pb) return tmPickPosition(pb.dataset.pos);
     if (t.closest("#tm_fromtrade")) return tmFromTradePick();
     if (t.closest("#tm_clearpos")) { TM.f.pos = null; tmPrepare(); return; }
+    if (t.closest("#tm_clearplan")) { TM.f.plan = null; tmRender(); return; }
+    if (t.closest("#tm_scan")) return tmScan();
     if (t.closest("#tm_run")) return tmRun();
     if (t.closest("#tm_cancel")) { TM.cancel = true; return; }
     if (t.closest("#tm_other")) { $("tm_find").hidden = !$("tm_find").hidden; return; }
@@ -604,7 +617,8 @@ function tmBind() {
     if (id === "tm_exp") { f.expiry = v; f.strike = ""; TM.ch = null; tmLoadIntraChain(f.ix, v).then(tmRender).catch((e) => { TM.err = tmErr(e); tmRender(); }); }
     else if (id === "tm_strike") f.strike = v;
     else if (id === "tm_entry") f.entryAt = v;
-    else if (id === "tm_paths") f.paths = +v;
+    else if (id === "tm_paths") f.paths = v === "auto" ? "auto" : +v;
+    else if (id === "tm_step") f.step = v === "auto" ? "auto" : +v;
     else if (id === "tm_vol") f.volMode = v;
     else if (id === "tm_sym") { f.sym = v; f.sexpiry = ""; TM.ch = null; tmRender(); tmPrepare(); }
     else if (id === "tm_inst") { f.inst = v; f.sexpiry = ""; tmRender(); tmPrepare(); }

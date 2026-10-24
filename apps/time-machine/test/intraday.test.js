@@ -177,7 +177,7 @@ test("a full live run: three models, six variants, probabilities that add up", a
   assert.equal(rep.models.replay.independent, 2);
   assert.equal(rep.models.replay.n, 14);
   assert.equal(rep.meta.step, 1);                                    // a 10% stop is within 3 typical 5-minute moves: 1-minute bars, chosen for you
-  assert.match(rep.meta.step_note, /auto: 1-minute bars/);
+  assert.match(rep.meta.step_note, /auto: 1-minute candles/);
   assert.equal(rep.models.implied.step, 1); assert.equal(rep.models.bootstrap.step, 1); assert.equal(rep.models.replay.step, 5);
   assert.ok(rep.gate && ["pass", "watch", "fail"].includes(rep.gate.gate));
   assert.ok(rep.blend && rep.blend.se > 0 && Math.abs(Object.values(rep.blend.weights).reduce((a, b) => a + b, 0) - 1) < 1e-9);
