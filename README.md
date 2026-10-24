@@ -46,7 +46,9 @@ JavaScript port of the Python tool, held to it by tests, and it counts what a tr
 paths from several models. Every plan goes through it: the Trade tab checks the plan before
 it is logged, the scan ranks contracts by its gate, and the coach must run each setup
 through it. A bounded, freezable learning layer corrects its pace, its odds and its model
-weights from the real tapes the app saves. It does not predict.
+weights from the real tapes the app saves. The Now tab finds A+ trades on its own, sets their stops
+from the market, and shows the target with the chance of reaching it and what the plan needs from
+its signal to pay. It does not predict.
 See [apps/time-machine/README.md](apps/time-machine/README.md).
 
 ## Layout
@@ -69,7 +71,7 @@ cd plugins/trader-skill-india && python3 -m unittest discover -s tests -v
 And the Time Machine app's (Node 18+; the browser check also needs Playwright and Chromium):
 
 ```bash
-node --test apps/time-machine/test/core.test.js apps/time-machine/test/intraday.test.js apps/time-machine/test/charts.test.js apps/time-machine/test/learn.test.js
+node --test apps/time-machine/test/core.test.js apps/time-machine/test/intraday.test.js apps/time-machine/test/charts.test.js apps/time-machine/test/learn.test.js apps/time-machine/test/aplus.test.js
 ```
 
 Not financial advice. Nothing in these plugins places an order without your

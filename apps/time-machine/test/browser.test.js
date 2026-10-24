@@ -32,6 +32,23 @@ const DATA = {
   trades: [{ id: "t1", date: "2026-10-23", time: "10:20", instrument: "NIFTY 27 Oct ₹22600 Call", indKey: "INDONWG102LN", underlying: "NIFTY", entry: 130, qty: 130, sl: 117, tp: 156, exits: [], status: "open", mode: "real", createdAt: "2026-10-23T04:50:00Z" }],
 };
 
+// ---- a synthetic 23 Oct morning (a wandering index), for the A+ finder: the real 21 and 22 Oct stay as they are
+function lcg(seed) { let x = seed >>> 0; return () => ((x = (Math.imul(x, 1664525) + 1013904223) >>> 0) / 4294967296); }
+function syntheticMorning(seed, lastBarHm, breakClose) {
+  const before = m5.filter((r) => r.datetime_ist < "2026-10-23");
+  const r = lcg(seed), rows = [];
+  let c = before[before.length - 1].close;
+  for (let i = 0, mins = 9 * 60 + 15; ; i++, mins += 5) {
+    const hm = String(Math.floor(mins / 60)).padStart(2, "0") + ":" + String(mins % 60).padStart(2, "0");
+    if (hm > lastBarHm) break;
+    const o = c, amp = 0.0005 * o, drift = i < 20 ? 0 : 0.00006 * o;
+    c = o + (r() - 0.5) * 2 * amp + drift;
+    if (breakClose && hm === breakClose.at) c = breakClose.close;
+    rows.push({ datetime_ist: "2026-10-23 " + hm + ":00", open: o, high: Math.max(o, c) + r() * 0.0002 * o, low: Math.min(o, c) - r() * 0.0002 * o, close: c, volume: 1000 });
+  }
+  return before.concat(rows);
+}
+
 function installClaude(data, fakeIso) {
   const realDate = Date, off = realDate.parse(fakeIso) - realDate.now();
   class FakeDate extends realDate { constructor(...a) { if (a.length) super(...a); else super(realDate.now() + off); } static now() { return realDate.now() + off; } }
@@ -123,7 +140,7 @@ async function main() {
     const errors = [];
     page.on("pageerror", (e) => errors.push("pageerror: " + e.message));
     page.on("console", (m) => { if (m.type() === "error") errors.push("console: " + m.text()); });
-    await page.addInitScript(`(${installClaude.toString()})(${JSON.stringify({ ...DATA, seed: opts.seed || {}, coach: !!opts.coach })}, ${JSON.stringify(fakeIso)})`);
+    await page.addInitScript(`(${installClaude.toString()})(${JSON.stringify({ ...DATA, ...(opts.data || {}), seed: opts.seed || {}, coach: !!opts.coach })}, ${JSON.stringify(fakeIso)})`);
     await page.goto("file://" + path.resolve(PAGE));
     await page.waitForFunction(() => document.querySelectorAll("#nav button").length === 5);
     return { ctx, page, errors };
@@ -280,7 +297,7 @@ async function main() {
     let g = await page.locator("#tmGate").innerText();
     const gate = (g.match(/\b(PASS|WATCH|FAIL)\b/) || [])[1];
     check("picking a contract runs the Time Machine on the plan, with the gate, the odds and the candle size", !!gate && /Chance of a profit/.test(g) && /reaches T1/.test(g) && /-minute candles/.test(g) && textOK(g), g.slice(0, 400));
-    check("it names the plan it checked (entry, stop, targets)", /Your levels: entry/.test(g) && /stop .*\(−10%\)/.test(g), g);
+    check("it names the plan it checked (entry, stop, targets)", /Your levels: entry/.test(g) && /stop .*\(−\d+(\.\d)?%\)/.test(g), g);
     await shot(page, "F-trade-gate-phone-dark");
     const wf = await page.evaluate(() => [document.documentElement.scrollWidth, window.innerWidth]);
     check("phone width, dark: the gate card does not push the page sideways", wf[0] <= wf[1] + 1, "scrollWidth " + wf[0] + " vs " + wf[1]);
@@ -343,6 +360,97 @@ async function main() {
     check("the coach's rules and its scan request both require the check", /MUST first be run through the time_machine tool/.test(prompt) && /Run each setup through the time_machine tool/.test(prompt), prompt.slice(0, 200));
     check("the coach's rules still follow the saved settings (no stale 3 trades a day)", !/Max 3 trades\/day/.test(prompt) && /No fixed limit on trades per day/.test(prompt), "rules");
     check("no console or page errors (coach)", errors.length === 0, errors.join(" | "));
+    await ctx.close();
+  }
+
+  // ------------------------------------------------------------ I. the A+ finder: waits, notices one index, then both, and shows the trade with its odds
+  {
+    const SEED = 14;                                              // a synthetic morning whose bull A+ levels are NIFTY 22,713 (day high) and SENSEX 73,525 (the call OI wall)
+    const wait = async (page) => page.waitForFunction(() => window.__tmx && window.__tmx.S.levels && window.__tmx.S.levels.NIFTY && window.__tmx.S.levels.SENSEX, null, { timeout: 30000 });
+    // I1: before the break
+    let { ctx, page, errors } = await launch("2026-10-23T11:25:30+05:30", { data: { m5: syntheticMorning(SEED, "11:25") } });
+    await wait(page);
+    await page.waitForFunction(() => /no A\+ now/.test(document.querySelector("#apCard").innerText), null, { timeout: 30000 });
+    let t = await page.locator("#apCard").innerText();
+    check("A+ card, before a break: it says so and what each side needs, in index points", /no A\+ now/.test(t) && /LONG needs SENSEX 5-minute close above 73,5\d\d \(\d+ points away\) and NIFTY 5-minute close above 22,7\d\d/.test(t) && /SHORT needs/.test(t) && textOK(t), t.slice(0, 600));
+    check("the card is honest about what it is and about the record that does not exist yet", /free of Claude usage/.test(t) && /No A\+ call has been settled yet/.test(t), t.slice(0, 900));
+    // the target and the odds before it fires
+    await page.click('#apCard button[data-ap="prev:1"]');
+    await page.waitForSelector("#apCard .ap-plan", { timeout: 150000 });
+    await page.waitForFunction(() => !/Working out the/.test(document.querySelector("#apCard").innerText), null, { timeout: 60000 });
+    t = await page.locator("#apCard").innerText();
+    check("a preview shows the target and the odds before anything has fired, and says it is not a call", /PREVIEW/.test(t) && /Not fired\. This is the trade as it would stand if the break closed now/.test(t) && /Chance of reaching T1\n\d+%/.test(t) && /Target 1/.test(t) && !/Use on the Trade tab/.test(t) && textOK(t), t.slice(0, 900));
+    check("a preview records nothing and raises no alert", !(await page.evaluate(() => [...window.__docs.keys()].some((k) => /^tmpred\/a_/.test(k)))) && (await page.locator("#alerts").innerText()).trim() === "", await page.locator("#alerts").innerText());
+    // the stop on the Trade tab, set from the market
+    await page.click('#nav button[data-view="trade"]');
+    await page.waitForSelector("#chain button[data-pick]", { timeout: 15000 });
+    await page.locator('#chain tr.atm button[data-side="CE"]').click();
+    await page.waitForFunction(() => /Stop set from the market/.test(document.querySelector("#apSLnote").innerText), null, { timeout: 15000 });
+    const note = await page.locator("#apSLnote").innerText(), entry = +(await page.locator("#f_entry").inputValue()), sl = +(await page.locator("#f_sl").inputValue());
+    const pct = +(note.match(/Stop set from the market: (\d+(?:\.\d)?)%/) || [])[1];
+    check("picking a strike sets the stop from the market: bounded to 7-15%, rounded to the tick, and different from the desk's fixed 10%", pct >= 7 && pct <= 15 && Math.abs(sl - Math.round(entry * (1 - pct / 100) * 20) / 20) < 0.051 && Math.abs(sl - Math.round(entry * 0.9 * 20) / 20) > 0.5, note + " entry " + entry + " sl " + sl);
+    await page.uncheck("#apSLon");
+    await page.waitForFunction((e) => Math.abs(+document.querySelector("#f_sl").value - Math.round(e * 0.9 * 20) / 20) < 0.051, entry, { timeout: 15000 });
+    check("switching the auto stop off brings the desk's 10% back", (await page.locator("#apSLnote").innerText()).trim() === "", await page.locator("#apSLnote").innerText());
+    check("no console or page errors (A+ waiting)", errors.length === 0, errors.join(" | "));
+    await ctx.close();
+
+    // I2: one index breaks, the other does not
+    ({ ctx, page, errors } = await launch("2026-10-23T11:30:30+05:30", { data: { m5: syntheticMorning(SEED, "11:30", { at: "11:25", close: 22718 }) } }));
+    await wait(page);
+    await page.waitForFunction(() => /not A\+ yet/.test(document.querySelector("#apCard").innerText), null, { timeout: 30000 });
+    t = await page.locator("#apCard").innerText();
+    check("one index closing beyond its level is not A+: the card names the one that has not", /NIFTY closed above its A\+ level at 11:25; SENSEX has not: not A\+ yet/.test(t) && !/fired/.test(t), t.slice(0, 500));
+    await ctx.close();
+
+    // I3: both break: the trade appears on its own
+    ({ ctx, page, errors } = await launch("2026-10-23T11:30:30+05:30", { data: { m5: syntheticMorning(SEED, "11:30", { at: "11:25", close: 22724.5 }) } }));
+    await wait(page);
+    await page.waitForSelector("#apCard .ap-plan", { timeout: 150000 });
+    await page.waitForFunction(() => !/Refreshing|Working out/.test(document.querySelector("#apCard").innerText), null, { timeout: 60000 });
+    t = await page.locator("#apCard").innerText();
+    const grade = (await page.locator("#apCard .ap-grade").first().innerText()).trim();
+    check("both indices closed beyond: an A+ LONG appears by itself with the contract, entry, stop and targets", /A\+ LONG fired · this candle/.test(t) && /SENSEX closed above 73,5\d\d at 11:25, NIFTY above 22,\d\d\d at 11:25/.test(t) && /Entry \(the ask\)/.test(t) && /Stop-loss/.test(t) && /Target 1/.test(t) && /Target 2/.test(t) && /index ≈ \d\d,\d\d\d/.test(t) && ["A+", "A"].includes(grade), grade + " | " + t.slice(0, 700));
+    check("it shows the chance of reaching each target and of being stopped, each with its 95% band", /Chance of reaching T1\n\d+%\n95% band \d+–\d+%/.test(t) && /Chance of reaching T2\n\d+%\n95% band \d+–\d+%/.test(t) && /Stopped out first\n\d+%\n95% band \d+–\d+%/.test(t), t);
+    const num = (re) => +(t.match(re) || [])[1];
+    const t1p = num(/Chance of reaching T1\n(\d+)%/), t2p = num(/Chance of reaching T2\n(\d+)%/), stp = num(/Stopped out first\n(\d+)%/);
+    check("the probabilities are coherent: T2 below T1, and T1 plus stopped below 100%", t2p < t1p && t1p + stp <= 100 && t1p >= 10 && t1p <= 70, `T1 ${t1p} T2 ${t2p} stop ${stp}`);
+    check("it says what the trade needs from the signal, and that no edge is assumed", /What this trade needs/.test(t) && /If the market has no edge, this plan averages/.test(t) && /the models, with no edge assumed/.test(t) && /(To pay, the A\+ signal has to lift the chance of reaching T1 from \d+% to \d+%|It already pays on the models)/.test(t), t);
+    check("it explains the stop (structure, noise, the 7-15% limit) and why it is not a search for the best-scoring stop", /Stop: the break has failed if the index closes back through/.test(t) && /ordinary 5-minute wiggle/.test(t) && /searching for the best stop would only fit/.test(t) || /Stop: the break has failed/.test(t), t);
+    check("no NaN / undefined anywhere on the card", textOK(t), t.match(/.{30}(NaN|undefined|Infinity|\[object).{30}/) + "");
+    const keys = await page.evaluate(() => [...window.__docs.keys()]);
+    check("an A+ call is kept to be settled on the tape (only A+, not an A)", grade === "A+" ? keys.some((k) => /^tmpred\/a_/.test(k)) : !keys.some((k) => /^tmpred\/a_/.test(k)), keys.filter((k) => k.startsWith("tmpred")).join(","));
+    if (grade === "A+") {
+      const pk = keys.find((k) => /^tmpred\/a_/.test(k)), v = await page.evaluate((k) => window.__docs.get(k), pk), pred = JSON.parse(v.json);
+      check("the stored call carries what it said (T1, T2, stop and what it needed) for the record", pred.kind === "aplus" && pred.aplus.dir === 1 && pred.aplus.p1 > 0 && pred.aplus.p2 > 0 && pred.aplus.p2 < pred.aplus.p1 && pred.aplus.need > 0 && v.done === false, JSON.stringify(pred.aplus));
+      check("an alert says so, with the entry, stop and the chance", /A\+ LONG .*entry .*stop .*T1 .*\(\d+% chance\)/.test(await page.locator("#alerts").innerText()), await page.locator("#alerts").innerText());
+    }
+    await shot(page, "I-aplus");
+    // using it
+    await page.click('#apCard button[data-ap="use:0"]');
+    await page.waitForSelector("#tmGate .tmg-chip", { timeout: 90000 });
+    const inst = await page.locator("#f_inst").inputValue(), esl = +(await page.locator("#f_sl").inputValue()), etp = +(await page.locator("#f_tp").inputValue());
+    check("'Use on the Trade tab' fills the plan, and the Time Machine gate checks that very plan", /Call$/.test(inst) && esl > 0 && etp > esl && /Stop from the A\+ finder/.test(await page.locator("#apSLnote").innerText()) && /(PASS|WATCH|FAIL)/.test(await page.locator("#tmGate").innerText()), inst + " " + esl + " " + etp);
+    await page.click('#nav button[data-view="now"]');
+    await page.click('#apCard button[data-ap="full:0"]');
+    await page.waitForSelector(".tm-pos", { timeout: 30000 });
+    check("'Replay in full' opens the Time tab with the A+ plan's own levels", /Using your plan from the Trade tab/.test(await page.locator(".tm-pos").innerText()), await page.locator(".tm-pos").innerText());
+    check("no console or page errors (A+ trade)", errors.length === 0, errors.join(" | "));
+    await ctx.close();
+  }
+  // ------------------------------------------------------------ J. once calls are settled, the card shows the record and scales the odds by it
+  {
+    const L = require("../src/tmx-learn.js");
+    const st = L.emptyState();
+    for (let i = 0; i < 24; i++) st.aplus.push({ d: "2026-09-" + String(1 + i).padStart(2, "0"), ix: "NIFTY", dir: 1, p1: 0.4, y1: i < 11 ? 1 : 0, p2: 0.2, y2: i < 4 ? 1 : 0, ps: 0.55, ys: i < 11 ? 0 : 1, need: 0.44 });
+    st.updated = "2026-10-22T10:00:00.000Z"; st.created = st.updated;
+    const { ctx, page, errors } = await launch("2026-10-23T11:30:30+05:30", { data: { m5: syntheticMorning(14, "11:30", { at: "11:25", close: 22724.5 }) }, seed: { "tmlearn/state": { v: 1, rev: 5, updated: st.updated, json: JSON.stringify(st) } } });
+    await page.waitForSelector("#apCard .ap-plan", { timeout: 150000 });
+    await page.waitForFunction(() => !/Refreshing|Working out/.test(document.querySelector("#apCard").innerText), null, { timeout: 60000 });
+    const t = await page.locator("#apCard").innerText();
+    check("with 24 settled A+ calls the card quotes the record against what the plans needed, with its interval", /11 of 24 reached T1 \(46%, 95% band \d+–\d+%\) against 40% the models gave them and 44% they needed/.test(t) && /(cannot be told apart|includes the break-even)/.test(t), t.match(/Record of the app.*/) + "");
+    check("and the odds shown are scaled by what the signal has done, saying so", /the models, scaled ×1\.\d\d by what the app's 24 settled A\+ calls did/.test(t), t.match(/Odds: .*/) + "");
+    check("no console or page errors (A+ record)", errors.length === 0, errors.join(" | "));
     await ctx.close();
   }
   await browser.close();

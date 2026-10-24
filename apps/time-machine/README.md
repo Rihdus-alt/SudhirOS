@@ -25,6 +25,38 @@ same learned settings and the same gate wherever it comes from:
 * **The gate rule** is the Python tool's: a model is negative when the 95% band of its average result after charges is
   below zero; FAIL if any simulated model is, PASS if one is positive and none negative, otherwise WATCH.
 
+## A+ trades, found on its own
+
+The Now tab opens with an **A+ trade** card that needs no click and no Claude usage. It uses the desk's own A+ rule (a 5-minute
+candle closes beyond the A+ level on both indices: room to the next level of at least 15% of the premium, and a stop that fits the
+failed-break width). One thing it does differently: the desk's "Levels to watch" drops a trigger as soon as price is through it, so
+its "both closed beyond" banner can fire only in the moment between a candle update and the next quote. The finder instead looks back
+at the levels as they stood one candle earlier (`computeLevels(ix, at)`), so a fresh break is seen for the next 15 minutes.
+
+When both indices break in the same direction it picks the contract (delta 0.40-0.60, spread within 4%, the desk's default
+expiry), sizes it so one stop-out uses at most half of the day stop, sets the stop, runs the Time Machine (4,000 paths a model, the
+desk plan and an all-out-at-T2 variant on the same paths) and shows: entry, stop, T1 and T2 with their index equivalents, the chance of
+reaching each and of being stopped first with a 95% band, the average after charges, and what the plan needs from its signal to pay.
+It raises an alert (the desk's banner and beep) and keeps each A+ call as a prediction to be settled on the saved tape. Before
+anything has fired, "Preview the LONG/SHORT trade" shows the same target and odds as the trade would stand at today's prices;
+a preview is labelled, is never recorded and raises no alert.
+
+**Honest probabilities.** The models have no edge, so the chance of reaching T1 is the first-passage odds of the plan (about
+L / (L + G) for a stop of L and a target of G, less the spread and charges), not a forecast that the signal works. The 95% band counts
+both the paths' sampling error and the disagreement between the models (a coverage test checks it holds 95% of the time in a world
+with a known answer). Because the models are fair games, a plan's average after charges is negative by construction; the useful
+number is the **break-even**: the lift in the chance of reaching T1 that brings the average to zero, computed from the simulated
+outcome classes. The **A+ record** then holds the signal to it: each settled call's T1 result against what the models gave it and what
+it needed, with a Wilson interval. After 20 calls the odds shown are scaled by what the signal has actually done (shrunk, 0.6-1.4);
+until then they are the models' and the card says so. Roughly one A+ a day means about a month before the record can say anything.
+
+**Stops set from the market.** The stop is at the point where the break has failed (a close back through the broken level by the
+desk's buffer), at least 1.5 typical 5-minute moves away (a robust spread of today's candle bodies, so the breakout candle does not
+inflate it), and inside 7-15% of the premium; needing more than 15% means it does not fit and is not A+. The Trade tab does the same
+when a strike is picked (switch it off with the checkbox; edit the stop to override). It is a rule, not a search: with no edge in the
+models, picking the best of many stops on a simulation would only fit its noise. The card shows the desk's fixed 10% stop on the same
+paths beside it. Open trades keep the ladder alerts that say when to move the stop.
+
 ## Candle size
 
 The intraday models run on 1-, 5- or 15-minute candles, chosen in Options or left on Auto. The option's price is a
@@ -81,7 +113,9 @@ the app can correct itself most, and it needs weeks of use to have anything to s
 ```
 src/tmx-core.js        swing engine + shared maths (Black-76, indicators, setups, exit engine, chain, option leg, costs)
 src/tmx-intraday.js    the intraday engine (minute-grid clock, three models, the desk plan on premium candles)
-src/tmx-learn.js       the learning layer (pace, calibration, model weights, speed): pure state in, state out
+src/tmx-learn.js       the learning layer (pace, calibration, model weights, speed, the A+ record): pure state in, state out
+src/tmx-aplus.js       the A+ finder's pure parts: stops, break-even, fresh-break detection, the record, lots, the checklist
+src/tmx-aplus-ui.js    the A+ card, its alert, the Trade tab's stop
 src/tmx-charts.js      small SVG charts in the page's colour tokens
 src/tmx-ui.js          the tab's code (runs inside the desk's script)
 src/tmx-desk.js        the desk's links: the shared analysis, the store, the Trade-tab gate, scan, coach tool, Learning card
@@ -95,7 +129,7 @@ test/                  Node tests, the Python reference dump, and the Chromium h
 
 ```bash
 python3 apps/time-machine/build.py --base <the desk page as saved by Claude> --out-dir <folder>
-node --test apps/time-machine/test/core.test.js apps/time-machine/test/intraday.test.js apps/time-machine/test/charts.test.js apps/time-machine/test/learn.test.js
+node --test apps/time-machine/test/core.test.js apps/time-machine/test/intraday.test.js apps/time-machine/test/charts.test.js apps/time-machine/test/learn.test.js apps/time-machine/test/aplus.test.js
 node apps/time-machine/test/browser.test.js <folder>/desk-time.full.html [screenshot-folder]
 python3 apps/time-machine/test/ref_dump.py     # regenerates test/ref.json from the Python tool
 ```

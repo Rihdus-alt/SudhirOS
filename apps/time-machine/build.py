@@ -17,7 +17,7 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SRC = os.path.join(HERE, "src")
-BUILD = "2026-10-24b"
+BUILD = "2026-10-24c"
 
 
 def read(name):
@@ -65,11 +65,11 @@ def build(base_text):
 </nav>""", "nav")
 
     # 2. the engines and charts, before the desk's own script
-    engines = "".join("<script>\n%s\n</script>\n" % read(f) for f in ("tmx-core.js", "tmx-intraday.js", "tmx-learn.js", "tmx-charts.js"))
+    engines = "".join("<script>\n%s\n</script>\n" % read(f) for f in ("tmx-core.js", "tmx-intraday.js", "tmx-learn.js", "tmx-aplus.js", "tmx-charts.js"))
     p.once("<script>\n(() => {\nconst IND = \"IndMoney\";", engines + "<script>\n(() => {\nconst IND = \"IndMoney\";", "engines")
 
     # 3. the tab's own code, before boot()
-    ui = read("tmx-ui.js") + "\n" + read("tmx-desk.js")
+    ui = read("tmx-ui.js") + "\n" + read("tmx-desk.js") + "\n" + read("tmx-aplus-ui.js")
     if "</script" in ui:
         sys.exit("build.py: the UI code contains a closing script tag")
     p.once("async function boot(){", ui + "\nasync function boot(){", "ui")
@@ -80,13 +80,21 @@ def build(base_text):
            """  if (v==="trade" && mcp && (!S.chain || S.chain.err || S.chain.ix!==S.ix)) loadChain(null);
   if (v==="time") tmEnter();
   if (v==="trade") tmGateSchedule(); }""", "setView hook")
-    p.once("  bind(); renderAll();\n  const C=window.claude;", "  bind(); tmBind(); tmDeskBind(); renderAll();\n  const C=window.claude;", "boot bind")
+    p.once("  bind(); renderAll();\n  const C=window.claude;", "  bind(); tmBind(); tmDeskBind(); apBind(); renderAll();\n  const C=window.claude;", "boot bind")
     p.once("""S.gap.err="Live data isn't available in this view."; renderAll(); return; } syncWatches(true); loadGapHistory(); watchUS(); if (S.view==="trade") loadChain(null);""",
            """S.gap.err="Live data isn't available in this view."; renderAll(); if (S.view==="time") tmPrepare(); return; } syncWatches(true); loadGapHistory(); watchUS(); if (S.view==="trade") loadChain(null); if (S.view==="time") tmPrepare(); lrnBackground();""", "mcp arrives")
     p.once('const APP_BUILD = "2026-10-06a";', 'const APP_BUILD = "%s";' % BUILD, "build")
 
     # 4b. every plan goes through the Time Machine: the Trade tab's check, the journal's chip, the learning store
-    p.once('<div id="plan"></div>', '<div id="plan"></div>\n      <div id="tmGate" aria-live="polite"></div>', "gate markup")
+    p.once('<div id="plan"></div>', '<div id="plan"></div>\n      <div style="margin-top:8px"><label class="row small" style="gap:6px;color:var(--ink)"><input type="checkbox" id="apSLon" checked> Set the stop from the market (structure, noise, risk) when a strike is picked</label><div id="apSLnote" class="small muted" style="margin-top:4px"></div></div>\n      <div id="tmGate" aria-live="polite"></div>', "gate markup")
+    p.once('<section class="view" data-view="now">\n    <div class="card">\n      <div class="row" style="justify-content:space-between"><h2 style="margin:0">Levels to watch</h2>',
+           '<section class="view" data-view="now">\n    <div class="card" id="apCard" aria-live="polite"></div>\n    <div class="card">\n      <div class="row" style="justify-content:space-between"><h2 style="margin:0">Levels to watch</h2>', "A+ card markup")
+    p.once('function computeLevels(ix){\n  const st=stOf(IDX[ix].key), spot=st?.live_price; const c=closedCandles(ix); if(!spot||c.length<3) return null;',
+           'function computeLevels(ix,at){\n  const st=stOf(IDX[ix].key), spot=at?at.spot:st?.live_price; const c=at?at.c:closedCandles(ix); if(!spot||c.length<3) return null;', "computeLevels signature")
+    p.once('add(st.day_high,"day high"); add(st.day_low,"day low");', 'add(at?Math.max(...c.map(x=>x.high)):st.day_high,"day high"); add(at?Math.min(...c.map(x=>x.low)):st.day_low,"day low");', "computeLevels day extremes")
+    p.once('  $("lvlAsOf").textContent = S1? `5m close ${S1.last.t}` : "";\n}', '  $("lvlAsOf").textContent = S1? `5m close ${S1.last.t}` : "";\n  apTick();\n}', "levels hook")
+    p.once('$("f_sl").value=p.sl; $("f_tp").value=p.tp2;', '$("f_sl").value=p.sl; $("f_tp").value=p.tp2; apFillSL(e);', "autoFill stop")
+    p.once('  const fresh=list.filter(a=>!S.alerted[a.key]&&!S.dismissed?.[a.key]);', '  apAlerts(list);\n  const fresh=list.filter(a=>!S.alerted[a.key]&&!S.dismissed?.[a.key]);', "alerts hook")
     p.once('function renderPlan(){\n  const e=num($("f_entry").value)', 'function renderPlan(){\n  tmGateSchedule();\n  const e=num($("f_entry").value)', "renderPlan hook")
     p.once('  $("save").disabled=true;\n  try{ await db.collection("trades").doc().set(doc);',
            '  const tmv=await tmBeforeSave(); if (tmv==="hold") return; if (tmv){ doc.tm=tmv.tm; if (tmv.id) doc.tmId=tmv.id; }\n  $("save").disabled=true;\n  try{ await db.collection("trades").doc().set(doc);', "save hook")

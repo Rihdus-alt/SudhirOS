@@ -7,6 +7,7 @@ const LRN = { st: TMl.emptyState(), ready: false, rev: 0, dirty: false, timer: n
   feed: {}, daily: {}, obs: new Map(), obsSeen: new Set(), preds: new Map(), tradeSeen: new Set(), resetArmed: 0, bg: false };
 const TMG = { last: null, timer: null, runId: 0, busy: false, confirmKey: null };
 const lrnNow = () => new Date().toISOString();
+const tmClock = (ms) => { const m = Math.floor(TMi.istParts(ms).mins); return String(Math.floor(m / 60)).padStart(2, "0") + ":" + String(m % 60).padStart(2, "0"); };      // HH:MM in IST, whatever the device's zone
 const SESS_KEEP = 120;
 
 // ----- the store: the learner's state, the saved sessions, the observations and predictions waiting for a tape
@@ -104,7 +105,7 @@ function lrnResolve() {
       } else if (v.day < TMi.istParts(Date.now() - 8 * 864e5).date) done = true;
       if (done) { v.done = true; lrnPut("tmpred/" + id, v); }
     }
-    if (changed) lrnDirty();
+    if (changed) { lrnDirty(); try { apRender(); } catch {} }
   } finally { LRN.resolving = false; }
 }
 /** A closed trade that carries its Time Machine check teaches the calibration what your own fills and exits did. */
@@ -133,12 +134,12 @@ function lrnObserve(rep, ix) {
   }
 }
 /** Keep a prediction until a saved tape can settle it (at most 40 a day). Returns the stored prediction. */
-function lrnStorePred(rep, ix, kind) {
+function lrnStorePred(rep, ix, kind, o) {
   const m = rep.meta;
   if (m.mode !== "new" || !rep.models.implied || !rep.models.implied.variants) return null;
-  const id = "p_" + ix + "_" + m.start.day + "_" + m.side + m.strike + "_" + m.spec.m0 + "_" + m.lots;
+  const id = (o && o.id) || "p_" + ix + "_" + m.start.day + "_" + m.side + m.strike + "_" + m.spec.m0 + "_" + m.lots;
   if (LRN.preds.has(id)) { try { return JSON.parse(LRN.preds.get(id).json); } catch { return null; } }
-  const pred = TMl.predictionFrom(rep, { id, kind, ix });
+  const pred = TMl.predictionFrom(rep, Object.assign({ id, kind, ix }, (o && o.extra) || {}));
   const today = [...LRN.preds.values()].filter((v) => v.at && v.at.slice(0, 10) === lrnNow().slice(0, 10)).length;
   if (today >= 40) return pred;
   const v = { ix, day: pred.day, kind, done: false, at: lrnNow(), json: JSON.stringify(pred) };
@@ -353,7 +354,7 @@ function tmScanRender() {
       <td class="num ${cls(r.odds.exp)}">${inr(r.odds.exp)}<small>± ${inrA(1.96 * r.odds.se)}</small></td>
       <td><button class="mini" data-scanrun="${esc(r.ix + "|" + r.side + "|" + r.strike + "|" + r.expiry)}">Replay in full</button></td></tr>`).join("");
   el.innerHTML = `<div class="card"><div class="row" style="justify-content:space-between"><h2 style="margin:0">Scan through the Time Machine</h2>
-      <span class="small muted">${sc.running ? esc(sc.status) + " " + sc.done + " of " + sc.total : rows.length ? "done · " + new Date(sc.at).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }) : ""}${sc.running ? ` <button class="mini" id="tm_scancancel">Stop</button>` : ""}</span></div>
+      <span class="small muted">${sc.running ? esc(sc.status) + " " + sc.done + " of " + sc.total : rows.length ? "done · " + tmClock(sc.at) : ""}${sc.running ? ` <button class="mini" id="tm_scancancel">Stop</button>` : ""}</span></div>
     ${rows.length ? `<div class="small" style="margin:6px 0">${n("pass")} pass · ${n("watch")} watch · ${n("fail")} fail, of ${rows.length} contracts near the money (Δ 0.35–0.65), ${TM.f.lots} lot${TM.f.lots > 1 ? "s" : ""}, your desk plan, after charges.${n("pass") ? "" : " <b>Nothing passes right now.</b> That is the Time Machine's answer: a contract is not worth taking just because it is on this list."}</div>
       <div class="tbl"><table class="tm-table"><tr><th>Contract</th><th>Gate</th><th class="num">Chance of a profit</th><th class="num">Average result</th><th></th></tr>${body}</table></div>` : sc.running ? "" : `<div class="small muted">No contract could be replayed.</div>`}
     ${sc.errs.length ? `<div class="small down" style="margin-top:6px">${sc.errs.slice(0, 3).map(esc).join("<br>")}</div>` : ""}
@@ -405,6 +406,7 @@ function lrnHTML() {
     <div class="small muted" style="margin-top:6px">${pend} prediction${pend === 1 ? "" : "s"} and ${pendObs} observation${pendObs === 1 ? "" : "s"} waiting for the tape to be saved. The odds are only corrected once ${TMl.N_MIN.calibPaper} are settled, and the correction is judged on predictions it was not fitted to. The average result is not corrected.</div>
     <h3>Which model to trust</h3>
     <div class="small">Implied <b>${pc0(w.w.implied)}</b> · Bootstrap <b>${pc0(w.w.bootstrap)}</b> · Recent sessions <b>${pc0(w.w.replay)}</b> ${w.learned ? `<span class="muted">(learned from ${w.n} settled predictions; each stays between 10% and 70%)</span>` : `<span class="muted">(the default mix; it moves after ${TMl.N_MIN.weights} settled predictions)</span>`}</div>
+    <h3>The A+ record</h3><div class="small">${apRecordHTML()}</div>
     ${perf ? `<h3>Speed on this device</h3><div class="small">${esc(perf)}</div>` : ""}
     ${byGate ? `<h3>Your trades against the gate</h3><div class="tbl"><table class="tm-table"><tr><th>Gate when logged</th><th class="num">Closed trades</th><th class="num">Winners</th><th class="num">Net</th></tr>${byGate}</table></div><div class="small muted" style="margin-top:4px">A handful of trades says little either way.</div>` : ""}
     ${st.log.length ? `<h3>What changed</h3><ul class="tm-notes">${st.log.slice(-6).reverse().map((l) => `<li>${esc((l.t || "").slice(0, 10))} · ${esc(l.msg)}</li>`).join("")}</ul>` : ""}

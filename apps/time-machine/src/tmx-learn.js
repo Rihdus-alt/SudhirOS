@@ -23,7 +23,7 @@
   const EVENTS = ["profit", "t1", "stop"];
   const MODELS = ["implied", "bootstrap", "replay"];
   const PRIOR_W = { implied: 0.4, bootstrap: 0.4, replay: 0.2 };
-  const LIM = { pace: [0.75, 1.35], pairs: 400, obs: 120, seen: 800, log: 60 };
+  const LIM = { pace: [0.75, 1.35], pairs: 400, obs: 120, seen: 800, log: 60, aplus: 120 };
   const N_MIN = { pace: 8, calibPaper: 30, calibTrades: 15, weights: 25 };
   const sum = T.sum;
   const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
@@ -37,6 +37,7 @@
       calib: { profit: [], t1: [], stop: [] },        // [p, outcome] on the real tape, by event (the blend's probability)
       calibTrades: { profit: [], t1: [], stop: [] },  // the same for trades you actually took
       scores: { implied: { n: 0, ll: 0 }, bootstrap: { n: 0, ll: 0 }, replay: { n: 0, ll: 0 } },
+      aplus: [],                                      // the record of the app's own A+ calls, settled on the real tape: [{d, ix, dir, p1, y1, p2, y2, ps, ys, need}]
       perf: {},                                       // by "model|step": {msPerBar, n}
       seen: [], log: [] };
   }
@@ -179,8 +180,11 @@
     if (!session || !session.full || !pred.spec) return null;
     const m0 = pred.spec.m0, bars = session.bars.slice(m0 / 5);
     if (bars.some((b) => !b)) return null;
-    const out = I.playTape(pred.spec, bars, profile, Object.assign({}, I.DEFAULT_RULES, pred.rules), rates, pred.lots, pred.E);
-    return out ? { profit: out.profit, t1: out.t1, stop: out.stop, pnl: out.pnl } : null;
+    const R = Object.assign({}, I.DEFAULT_RULES, pred.rules), out = I.playTape(pred.spec, bars, profile, R, rates, pred.lots, pred.E);
+    if (!out) return null;
+    const res = { profit: out.profit, t1: out.t1, stop: out.stop, pnl: out.pnl };
+    if (pred.kind === "aplus") { const o2 = I.playTape(pred.spec, bars, profile, R, rates, pred.lots, pred.E, "allT2"); res.t2 = o2 ? o2.t1 : null; }       // T2 on its own, no part booked at T1
+    return res;
   }
   /** What your closed trade did against the levels it was planned with: profit, any exit at or above T1, the first exit at or
    *  below the stop. trade: {entry, exits: [{price, qty}], realisedNet}. */
@@ -190,10 +194,19 @@
     const tol = 0.05 + 1e-9;
     return { profit: trade.realisedNet > 0 ? 1 : 0, t1: ex.some((e) => +e.price >= pred.levels.t1 - tol) ? 1 : 0, stop: +ex[0].price <= pred.levels.sl + tol ? 1 : 0, pnl: trade.realisedNet };
   }
+  /** The A+ record is a measurement, not a setting: it keeps counting while learning is frozen (and has its own seen-id). */
+  function addRecord(st, pred, outcome, source, at) {
+    const id = "rec:" + pred.id;
+    if (pred.kind !== "aplus" || !pred.aplus || source === "trade" || outcome.t1 == null || st.seen.includes(id)) return;
+    st.aplus.push({ d: pred.day, ix: pred.ix, dir: pred.aplus.dir, p1: pred.aplus.p1, y1: outcome.t1, p2: pred.aplus.p2, y2: outcome.t2 == null ? 0 : outcome.t2, ps: pred.aplus.ps, ys: outcome.stop, need: pred.aplus.need });
+    if (st.aplus.length > LIM.aplus) st.aplus.splice(0, st.aplus.length - LIM.aplus);
+    seenAdd(st, id); stamp(st, at || null);
+  }
   const logLoss = (p, y) => -(y ? Math.log(cp(p)) : Math.log(1 - cp(p)));
   /** Fold a resolved prediction into calibration pairs (paper or trade) and the models' scores (paper only). Idempotent by id. */
   function observeOutcome(st, pred, outcome, source, at) {
     st = normalise(st);
+    if (outcome) addRecord(st, pred, outcome, source, at);
     const id = "out:" + source + ":" + pred.id;
     if (st.frozen || !outcome || st.seen.includes(id)) return st;
     const before = EVENTS.map((e) => calibrationOf(st, e).b);

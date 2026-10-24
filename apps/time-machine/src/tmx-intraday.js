@@ -364,15 +364,15 @@
 
   /** Play the desk plan on one real tape (5-minute bars from the entry on), with a stored contract spec and a forced entry
    *  price: what a stored prediction would have done. Returns the plan's three binary outcomes and its P&L, or null. */
-  function playTape(spec, bars5, profile, rules, rates, lots, entry) {
+  function playTape(spec, bars5, profile, rules, rates, lots, entry, variant) {
     const R = Object.assign({}, DEFAULT_RULES, rules || {});
     const clock = makeClock((profile && profile.shares5) || paramShares(), spec.phi, spec.day, spec.expiryIso);
     const pricer = makePricer(spec, clock), g = pricer.grid(5, spec.m0, spec.m0);
     if (bars5.length < g.n) return null;
     const bars = bars5.slice(0, g.n).map((b) => [b.o, b.h, b.l, b.c]);
-    const acc = newAcc(["desk"]);
+    const vk = variant || "desk", acc = newAcc([vk]);
     const ctx = { pricer, spec, rules: R, qLots: Math.max(1, lots || 1), mode: "new", posState: null, rates: rates || T.DEFAULT_RATES, exchange: spec.exchange || "NFO", valueNow: 0, delta: spec.delta };
-    const res = playPath(ctx, bars, g, acc, ["desk"], entry);
+    const res = playPath(ctx, bars, g, acc, [vk], entry);
     if (!res) return null;
     const a = acc[0];
     return { pnl: a.pnl[0], profit: a.pnl[0] > 0 ? 1 : 0, t1: a.t1[0], stop: a.stopped[0], cls: Object.keys(a.cls)[0] };
@@ -396,11 +396,11 @@
   }
   /** The models' desk-plan results mixed by weights (the replay counts for what its independent sessions are worth), with the
    *  simulation error and the disagreement between models both in the band. */
-  function blendOf(models, weights) {
-    const base = Object.assign({ implied: 0.4, bootstrap: 0.4, replay: 0.2 }, weights || {});
+  function blendOf(models, weights, variant) {
+    const base = Object.assign({ implied: 0.4, bootstrap: 0.4, replay: 0.2 }, weights || {}), vk = variant || "desk";
     const rows = [];
     for (const m of ["implied", "bootstrap", "replay"]) {
-      const v = models[m] && models[m].variants && models[m].variants.desk;
+      const v = models[m] && models[m].variants && models[m].variants[vk];
       if (!v || !v.n) continue;
       let w = base[m];
       if (m === "replay") w *= Math.min(1, (models.replay.independent || 0) / 10);
@@ -410,7 +410,13 @@
     const tw = sum(rows.map((r) => r.w)), E = sum(rows.map((r) => r.w * r.v.expectancy)) / tw;
     const seMc = Math.sqrt(sum(rows.map((r) => r.w * r.w * r.v.se * r.v.se))) / tw, spread = Math.sqrt(sum(rows.map((r) => r.w * (r.v.expectancy - E) * (r.v.expectancy - E))) / tw);
     const pf = (k) => sum(rows.map((r) => r.w * r.v[k])) / tw;
+    // a 95% band for a probability: the paths' sampling error and the disagreement between the models, together
+    const band = (k) => {
+      const pm = pf(k), sim = Math.sqrt(sum(rows.map((r) => r.w * r.w * r.v[k] * (1 - r.v[k]) / Math.max(r.v.n, 1)))) / tw, dis = Math.sqrt(sum(rows.map((r) => r.w * (r.v[k] - pm) * (r.v[k] - pm))) / tw), h = 1.96 * Math.hypot(sim, dis);
+      return [Math.max(0, pm - h), Math.min(1, pm + h)];
+    };
     return { expectancy: E, se: Math.hypot(seMc, spread), se_sim: seMc, spread, p_profit: pf("p_profit"), p_hit_t1: pf("p_hit_t1"), p_stop: pf("p_stop"),
+      ci_profit: band("p_profit"), ci_t1: band("p_hit_t1"), ci_stop: band("p_stop"),
       p_day_stop: rows[0].v.p_day_stop == null ? null : pf("p_day_stop"), weights: Object.fromEntries(rows.map((r) => [r.m, r.w / tw])) };
   }
 
@@ -655,7 +661,7 @@
         position: posState, day_stop: rules.dayStop, pace, ms: Date.now() - t0, perf, auto_paths: auto, tol_inr: tol, spec, bar_sd5_pts: barSd5, stop_pts: stopPts,
       },
       levels: Object.assign({}, planLv, { risk_inr: (entryPlan - planLv.sl) * qLots * lotSize }),
-      rules, models, gate: mode === "new" ? gateOf(models) : null, blend: blendOf(models, opts.weights), sensitivity: sens, notes,
+      rules, models, gate: mode === "new" ? gateOf(models) : null, blend: blendOf(models, opts.weights), blends: Object.fromEntries(keys.map((kx) => [kx, blendOf(models, opts.weights, kx)])), sensitivity: sens, notes,
       variants: keys.map((kx) => ({ key: kx, label: VARIANTS[kx].label, note: VARIANTS[kx].note })),
     };
   }

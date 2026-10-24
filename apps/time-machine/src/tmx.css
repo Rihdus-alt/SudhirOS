@@ -57,4 +57,9 @@
 .tmg-reason{margin-top:4px;font-size:13.5px}
 .tm-chip.tmg-pass{background:var(--up);color:var(--card)}.tm-chip.tmg-watch{background:var(--warn);color:var(--card)}.tm-chip.tmg-fail{background:var(--down);color:var(--card)}
 .tm-chip.tmg-none,.tm-chip.tmg-error{background:var(--chip);color:var(--muted);border:1px solid var(--line)}
+/* the A+ card on the Now tab */
+.ap-plan{margin-top:6px}
+.ap-grade{display:inline-block;padding:2px 10px;border-radius:8px;font-weight:800;font-size:13px;letter-spacing:.03em;background:var(--chip);color:var(--ink);border:1px solid var(--line)}
+.ap-grade.aplus{background:var(--accent);color:var(--card);border-color:var(--accent)}
+#apCard .ladder{width:100%}
 @media (max-width:520px){.tm-tiles .stat b{font-size:16px}}
