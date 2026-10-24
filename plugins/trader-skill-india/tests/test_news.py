@@ -48,5 +48,15 @@ class Feeds(unittest.TestCase):
             self.assertEqual(code, 1)
 
 
+class Names(unittest.TestCase):
+    def test_company_names_match_as_whole_words(self):
+        names = {"BANKINDIA": "Bank of India", "COALINDIA": "Coal India Limited"}
+        hit = lambda title: news.touches({"title": title, "kind": "headline", "symbol": ""}, names)
+        self.assertEqual(hit("Bank of Baroda raises lending rates"), [])
+        self.assertEqual(hit("Coal imports rise in September"), [])
+        self.assertEqual(hit("Bank of India Q2 profit jumps"), ["BANKINDIA"])
+        self.assertEqual(hit("Coal India output up 5%"), ["COALINDIA"])
+
+
 if __name__ == "__main__":
     unittest.main()

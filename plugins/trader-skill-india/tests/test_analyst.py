@@ -3,7 +3,7 @@ import json
 import os
 import tempfile
 import unittest
-from contextlib import redirect_stdout
+from contextlib import redirect_stdout, redirect_stderr
 
 from _load import load, FIX
 
@@ -73,6 +73,33 @@ class Results(unittest.TestCase):
             res = rs.analyse(rs.load_csv(p))
             self.assertAlmostEqual(res["quarters"][-1]["revenue_yoy"], 25.0)
             self.assertAlmostEqual(res["quarters"][-1]["net_margin"], 7.2)
+
+    def test_csv_with_bracketed_losses_dashes_and_indian_dates(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = os.path.join(d, "q.csv")
+            with open(p, "w") as fh:
+                fh.write("period_end,unit,revenue,exceptional,net_profit\n30-09-2025,crore,100,-,10\n"
+                         "30-Sep-2026,crore,\"1,25\",-,(20)\n")
+            qs = rs.load_csv(p)
+            self.assertEqual([q["end"] for q in qs], ["2025-09-30", "2026-09-30"])
+            self.assertEqual(qs[-1]["net_profit"], -20 * 1e7)
+            self.assertNotIn("exceptional", qs[0])
+            with open(p, "a") as fh:
+                fh.write("Q3,crore,1,1,1\n")
+            with self.assertRaises(rs.ResultsError):
+                rs.load_csv(p)
+
+    def test_metrics_row_needs_a_symbol(self):
+        with tempfile.TemporaryDirectory() as d:
+            p, m = os.path.join(d, "q.csv"), os.path.join(d, "metrics.json")
+            with open(p, "w") as fh:
+                fh.write("period_end,unit,revenue,net_profit\n2025-09-30,crore,100,10\n2026-09-30,crore,125,9\n")
+            out, err = io.StringIO(), io.StringIO()
+            with redirect_stdout(out), redirect_stderr(err):
+                code = rs.main(["read", p, "--metrics", m])
+            self.assertEqual(code, 1)
+            self.assertIn("--symbol", err.getvalue())
+            self.assertFalse(os.path.exists(m))
 
 
 if __name__ == "__main__":

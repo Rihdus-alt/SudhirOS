@@ -80,6 +80,21 @@ class Deals(unittest.TestCase):
             self.assertEqual(code, 1)
             self.assertIn("Nothing new", out)
 
+    def test_a_full_old_state_does_not_report_the_same_filings_again(self):
+        with tempfile.TemporaryDirectory() as d:
+            inv, st = os.path.join(d, "investors.json"), os.path.join(d, "s.json")
+            with open(inv, "w") as fh:
+                json.dump({"names": ["example investor a"]}, fh)
+            with open(st, "w") as fh:   # the old list format, already past the old 20,000-key cap
+                json.dump({"seen": ["zzz|%d" % n for n in range(20011)]}, fh)
+            argv = ["new", "--offline", F, "--to", "2026-10-19", "--investors", inv, "--state", st,
+                    "--portfolio", "/nonexistent"]
+            self.assertEqual(run(argv)[1].count("NEW "), 3)
+            for _ in range(2):
+                code, out, _ = run(argv)
+                self.assertEqual(code, 1, out)
+                self.assertIn("Nothing new", out)
+
 
 if __name__ == "__main__":
     unittest.main()

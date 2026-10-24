@@ -267,13 +267,18 @@ class Coster(object):
         return costs.trade_costs("buy", v, self.exchange, self.product, self.rates)["total"]
 
 
-def integer_shares(targets, prices, cap, money, coster, order, fill=False):
-    """Whole shares closest to the rupee targets that fit in `money` (worst case, with charges)."""
+def integer_shares(targets, prices, cap, money, coster, order, fill=False, max_order=0.0):
+    """Whole shares closest to the rupee targets that fit in `money` (worst case, with charges).
+    The position cap is on the last price; max_order is on the order's own (limit) price, which is how
+    india-risk values it."""
+    def over(t, n):
+        return n * prices[t] > cap + EPS or bool(max_order and n * coster.worst_price(t) > max_order + EPS)
+
     q = {}
     for t in order:
         tgt = min(targets[t], cap)
         n = int(math.floor(tgt / prices[t] + 0.5 + EPS)) if tgt > 0 else 0
-        while n > 0 and n * prices[t] > cap + EPS:
+        while n > 0 and over(t, n):
             n -= 1
         q[t] = n
 
@@ -299,7 +304,7 @@ def integer_shares(targets, prices, cap, money, coster, order, fill=False):
         improved = False
         best = None
         for t in order:
-            if (q[t] + 1) * prices[t] > cap + EPS:
+            if over(t, q[t] + 1):
                 continue
             d = err_delta(t, +1)
             if d >= -EPS:
@@ -316,7 +321,7 @@ def integer_shares(targets, prices, cap, money, coster, order, fill=False):
         while True:
             best, gap = None, None
             for t in order:
-                if (q[t] + 1) * prices[t] > cap + EPS:
+                if over(t, q[t] + 1):
                     continue
                 q[t] += 1
                 fits = total() <= money + EPS
@@ -370,7 +375,7 @@ def size(rows, cfg, budget=None, prices=None, details=None, top=None, fill=False
             r["weight"] = 100.0 * r["source_weight"] / tot
         exact, capped = allocate(live, investable, cap)
         order = [r["ticker"] for r in sorted(live, key=lambda r: -exact[r["ticker"]])]
-        shares = integer_shares(exact, prices, cap, investable, coster, order, fill)
+        shares = integer_shares(exact, prices, cap, investable, coster, order, fill, max_order)
         small = []
         for r in live:
             t = r["ticker"]

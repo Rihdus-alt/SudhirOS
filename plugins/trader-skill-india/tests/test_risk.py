@@ -63,6 +63,27 @@ class Rules(unittest.TestCase):
                           today="2026-10-21")
         return res["results"][0]
 
+    def test_a_buy_paid_by_an_earlier_sell_waits_for_that_sell(self):
+        pf = {"cash": 1000, "positions": [{"ticker": "TCS", "shares": 10}]}
+        tcs = self.p["TCS"]
+        orders = [o("TCS", "SELL", 5, price=tcs), o("HDFCBANK", qty=3, price=self.p["HDFCBANK"])]
+        res = check.check(orders, self.cfg, pf, self.p, self.q, today="2026-10-21")
+        sell, buy = res["results"]
+        self.assertEqual((sell["verdict"], buy["verdict"]), ("PASS", "PASS"), res)
+        self.assertEqual(buy["needs_sells"], [1])
+        ticket = load("india-broker", "ticket")
+        ok, why, _ = ticket.status_of(orders[1], res, {"orders": []}, "2026-10-21")
+        self.assertFalse(ok)
+        self.assertIn("SELL order 1", why)
+        placed = {"orders": [{"fingerprint": sell["fingerprint"], "date": "2026-10-21", "status": "placed"}]}
+        self.assertTrue(ticket.status_of(orders[1], res, placed, "2026-10-21")[0])
+
+    def test_buying_more_of_an_unpriced_holding_is_blocked(self):
+        pf = {"cash": 100000, "positions": [{"ticker": "ZZZZ", "shares": 10,
+                                             "lots": [{"date": "2026-01-01", "shares": 10, "cost": 5000}]}]}
+        r = self.one(o("ZZZZ", qty=1, price=500), portfolio=pf, details={})
+        self.assertTrue(any(x.startswith("price: no last price for ZZZZ") for x in r["reasons"]), r["reasons"])
+
     def test_fractional_quantity(self):
         r = self.one(o("TCS", qty=1.5, price=2470))
         self.assertTrue(any("whole number" in x for x in r["reasons"]))

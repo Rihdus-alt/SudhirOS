@@ -107,6 +107,17 @@ class Sales(unittest.TestCase):
         self.assertLess(c["loss"], -11000)
         self.assertLess(c["tax_change_this_fy"], -2000)   # about 20% of the loss
 
+    def test_harvest_orders_fit_the_max_order_at_their_limit(self):
+        p = pf(("ICICIBANK", [{"id": "I-1", "date": "2026-06-01", "shares": 100, "cost": 150000}]))
+        h = lots.harvest(p, {"ICICIBANK": 1381}, D(2026, 10, 21), [{"date": "2026-05-01", "short": 30000, "long": 0}])
+        orders = lots.harvest_orders(h, True, {"max_order_inr": 50000, "limit_buffer_pct": 0.5}, p, D(2026, 10, 21))
+        o = orders[0]
+        self.assertEqual(o["order_type"], "LIMIT")
+        self.assertLess(o["price"], 1381)
+        self.assertLessEqual(o["quantity"] * o["price"], 50000)
+        self.assertEqual(o["quantity"], int(50000 // o["price"]))
+        self.assertTrue(any("cut from 100" in n for n in lots.harvest_orders.notes))
+
     def test_bonus_split_and_bonus_stripping(self):
         p = pf(("HDFCBANK", [{"id": "H-1", "date": "2025-06-10", "shares": 10, "cost": 19000}]))
         self.assertEqual(lots.apply_bonus(p, "HDFCBANK", "1:1", D(2025, 8, 27)), 10)
@@ -121,6 +132,24 @@ class Sales(unittest.TestCase):
         self.assertEqual((l["shares"], l["cost"], l["fmv_2018_01_31"]), (50.0, 20000, 600.0))
         r = pf(("ITC", [{"id": "X-1", "date": "2024-01-01", "shares": 10, "cost": 4000}]))
         self.assertEqual(lots.apply_bonus(r, "ITC", "1:2", D(2024, 6, 1)), 5)   # 1 new for every 2 held
+
+    def test_ex_date_entitlement_and_allotment_date(self):
+        p = pf(("ITC", [{"id": "X-1", "date": "2024-05-01", "shares": 10, "cost": 4000},
+                        {"id": "X-2", "date": "2024-06-01", "shares": 10, "cost": 4100}]))   # bought ON the ex-date
+        self.assertEqual(lots.apply_bonus(p, "ITC", "1:1", D(2024, 6, 1), D(2024, 6, 3)), 10)
+        self.assertEqual(p["positions"][0]["lots"][-1]["date"], "2024-06-03")
+        q = pf(("TCS", [{"id": "T-1", "date": "2026-01-14", "shares": 10, "cost": 20000},
+                        {"id": "T-2", "date": "2026-01-15", "shares": 5, "cost": 2000}]))
+        lots.apply_split(q, "TCS", "1:5", D(2026, 1, 15))
+        self.assertEqual([l["shares"] for l in q["positions"][0]["lots"]], [50.0, 5])
+
+    def test_a_sale_cuts_lots_by_position_even_with_duplicate_ids(self):
+        p = pf(("INFY", [{"id": "INFY-2", "date": "2026-02-05", "shares": 10, "cost": 10000},
+                         {"id": "INFY-2", "date": "2026-04-06", "shares": 10, "cost": 12000}]))
+        sale = lots.simulate_sale(lots.lots_of(p)["INFY"], 5, 1200, D(2026, 5, 5))
+        p, _ = lots.record_sale(p, "INFY", sale, 1200, {"realized": []})
+        left = [(l["date"], l["shares"], l["cost"]) for l in p["positions"][0]["lots"]]
+        self.assertEqual(left, [("2026-02-05", 5.0, 5000.0), ("2026-04-06", 10, 12000)])
 
     def test_cli_sell_record_and_fy(self):
         with tempfile.TemporaryDirectory() as d:

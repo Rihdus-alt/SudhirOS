@@ -37,9 +37,52 @@ class Yes(unittest.TestCase):
                   "yes 40", "nahi", "yes, nahi"):
             self.assertFalse(self.ok(r), r)
 
+    def test_a_yes_with_anything_else_in_it_is_asked_again(self):
+        # another stock, a retraction in other words, the other side, a number that is not this order's
+        for r in ("yes icici", "yes, axis", "haan reliance", "yes, never mind", "yes, skip this one", "yes, abort",
+                  "yes I changed my mind", "haan, rehne do", "ha ha", "yes sell it", "yes, 30 shares at 715.55",
+                  "yes 35 at 700", "yes, 2 shares at 715.55"):
+            self.assertFalse(self.ok(r), r)
+        for r in ("yes please", "yes, go ahead", "haan kar do", "yes, place it", "yes 35 shares at 715.55",
+                  "Yes buy 35 HDFCBANK at Rs 715.55"):
+            self.assertTrue(self.ok(r), r)
+
+    def test_lots_count_for_fno(self):
+        o = {"tradingsymbol": "NIFTY26OCT22950PE", "transaction_type": "BUY", "quantity": 130, "price": 199.3,
+             "lot_size": 65, "exchange": "NFO", "product": "NRML", "order_type": "LIMIT"}
+        self.assertTrue(ticket.parse_yes("yes, 2 lots", o)[0])
+        self.assertFalse(ticket.parse_yes("yes, 3 lots", o)[0])
+
     def test_plain_ticket(self):
         self.assertEqual(ticket.plain(self.order), "BUY 35 shares of HDFCBANK on NSE, delivery (CNC), limit "
                                                    "₹715.55, valid for today")
+
+
+class Fills(unittest.TestCase):
+    def test_lot_ids_stay_unique_after_a_fifo_sale(self):
+        with tempfile.TemporaryDirectory() as d:
+            pfp = os.path.join(d, "portfolio.json")
+            with open(pfp, "w") as fh:
+                json.dump({"cash": 100000.0, "positions": []}, fh)
+            for side, qty, day in (("BUY", 10, "2026-01-05"), ("BUY", 10, "2026-02-05"), ("SELL", 10, "2026-03-05"),
+                                   ("BUY", 10, "2026-04-06"), ("SELL", 5, "2026-05-05")):
+                pf, _ = ticket.apply_fill(pfp, {}, "INFY", side, qty, 1000, day, 20.0, 10.0)
+                with open(pfp, "w") as fh:
+                    json.dump(pf, fh)
+            pos = pf["positions"][0]
+            self.assertEqual(pos["shares"], 15)
+            ids = [l["id"] for l in pos["lots"]]
+            self.assertEqual(len(ids), len(set(ids)), ids)
+
+    def test_charges_without_stt_still_keep_stt_out_of_the_cost(self):
+        with tempfile.TemporaryDirectory() as d:
+            pfp = os.path.join(d, "portfolio.json")
+            with open(pfp, "w") as fh:
+                json.dump({"cash": 100000.0, "positions": []}, fh)
+            pf, _ = ticket.apply_fill(pfp, {}, "HDFCBANK", "BUY", 35, 712.40, "2026-10-21", 29.67)
+            lot = pf["positions"][0]["lots"][0]
+            self.assertEqual(lot["stt"], 25.0)
+            self.assertAlmostEqual(lot["cost"], 35 * 712.40 + 29.67 - 25.0, places=2)
 
 
 class PaperFlow(unittest.TestCase):

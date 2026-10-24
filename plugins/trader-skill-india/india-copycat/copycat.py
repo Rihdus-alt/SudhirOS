@@ -302,6 +302,12 @@ def parse_amc(rows, sheet=""):
                     "excluded": why})
     if not out:
         raise CopyError("no holdings rows under the header")
+    pcts = [r["pct"] for r in out if r["pct"] is not None]
+    if pcts and max(abs(x) for x in pcts) <= 1.0 and sum(pcts) <= 1.05:
+        # an Excel percentage column stores 7.79% as 0.0779
+        for r in out:
+            if r["pct"] is not None:
+                r["pct"] *= 100.0
     return {"title": title or sheet, "as_of": as_of, "rows": out, "unit": unit}
 
 
@@ -401,7 +407,8 @@ def targets(rows, top=None, exclude=(), min_pct=0.0):
 
 def diff(old_rows, new_rows):
     """By ISIN (or symbol) and share count: new, exited, added, trimmed."""
-    key = lambda r: r.get("isin") or r.get("symbol") or norm_name(r.get("name"))
+    # the resolved symbol first: a split or consolidation gives the same company a new ISIN
+    key = lambda r: (r.get("symbol") or "").rstrip("*") or r.get("isin") or norm_name(r.get("name"))
     a = {key(r): r for r in old_rows}
     b = {key(r): r for r in new_rows}
     out = {"new": [], "exited": [], "added": [], "trimmed": [], "same": []}
@@ -439,7 +446,13 @@ def load_investor_rows(path):
         sh = num(r.get("shares"))
         if not sym or sh is None or not r.get("period"):
             raise CopyError("row %d needs symbol, period and shares: %r" % (i + 1, r))
-        out.append({"investor": r.get("investor") or r.get("holder") or "", "symbol": sym, "period": str(r["period"])[:10],
+        per = str(r["period"]).strip()
+        # NSE writes quarter ends as 30-Sep-2026: a raw [:10] cut loses the year's last digit, so parse it
+        per = per[:10] if re.match(r"\d{4}-\d{2}-\d{2}", per) else _date(per)
+        if not per:
+            raise CopyError("row %d: period %r is not a date (use YYYY-MM-DD, DD-MM-YYYY or 30-Sep-2026)"
+                            % (i + 1, r["period"]))
+        out.append({"investor": r.get("investor") or r.get("holder") or "", "symbol": sym, "period": per,
                     "shares": sh, "pct_of_company": num(r.get("pct_of_company") or r.get("pct")),
                     "source": r.get("source", "")})
     return out
@@ -686,6 +699,9 @@ def cmd_investor(a):
     rows = load_investor_rows(a.file)
     prices = load_prices(a.prices)
     p = investor_portfolio(rows, a.name, prices)
+    if a.out and p["missing_prices"]:
+        raise CopyError("no price for %s in %s: price every holding before writing %s (the weights would leave them "
+                        "out)" % (", ".join(p["missing_prices"]), a.prices, a.out))
     if a.out:
         total = sum(h["value_inr"] for h in p["holdings"][:a.top or None])
         weights = [{"ticker": h["symbol"], "name": "", "weight": round(100.0 * h["value_inr"] / total, 2),

@@ -126,6 +126,45 @@ class Investor(unittest.TestCase):
         self.assertEqual(p["changes"], {"new": ["DELTAPHAR"], "exited_or_below_1pct": ["CHARLIEINF"],
                                         "added": ["ALPHAPIPE"], "trimmed": []})
 
+    def test_nse_quarter_dates_and_unpriced_holdings(self):
+        with tempfile.TemporaryDirectory() as d:
+            src = os.path.join(d, "inv.csv")
+            with open(src, "w") as fh:
+                fh.write("investor,symbol,period,shares\n"
+                         "Example Investor A,ALPHAPIPE,30-Sep-2025,1000000\n"
+                         "Example Investor A,ALPHAPIPE,30-Jun-2026,2000000\n"
+                         "Example Investor A,ALPHAPIPE,30-Sep-2026,3000000\n"
+                         "Example Investor A,DELTAPHAR,30-Sep-2026,500000\n")
+            rows = cc.load_investor_rows(src)
+            self.assertEqual(sorted({r["period"] for r in rows}), ["2025-09-30", "2026-06-30", "2026-09-30"])
+            p = cc.investor_portfolio(rows, "example investor", {"ALPHAPIPE": 1250, "DELTAPHAR": 1420})
+            self.assertEqual(p["period"], "2026-09-30")
+            prices = os.path.join(d, "prices.json")
+            with open(prices, "w") as fh:
+                json.dump({"prices": {"ALPHAPIPE": 1250}}, fh)
+            out = os.path.join(d, "targets.json")
+            code, _, err = run(["investor", src, "--name", "example investor", "--prices", prices, "--out", out])
+            self.assertEqual(code, 1)
+            self.assertIn("DELTAPHAR", err)
+            self.assertFalse(os.path.exists(out))
+            with open(src, "a") as fh:
+                fh.write("Example Investor A,ALPHAPIPE,Q2 FY27,1\n")
+            with self.assertRaises(cc.CopyError):
+                cc.load_investor_rows(src)
+
+    def test_diff_follows_the_symbol_through_an_isin_change(self):
+        old = [{"isin": "INE040A01026", "symbol": "HDFCBANK", "name": "HDFC Bank", "quantity": 1000, "pct": 5.0}]
+        new = [{"isin": "INE040A01034", "symbol": "HDFCBANK", "name": "HDFC Bank", "quantity": 2000, "pct": 5.1}]
+        d = cc.diff(old, new)
+        self.assertEqual((len(d["new"]), len(d["exited"]), [r["symbol"] for r in d["added"]]), (0, 0, ["HDFCBANK"]))
+
+    def test_excel_percent_cells_are_scaled(self):
+        rows = [["Name of the Instrument", "ISIN", "Quantity", "Market value (Rs. in Lakhs)", "% to Net Assets"],
+                ["HDFC Bank Ltd", "INE040A01034", "100", "70", "0.6"],
+                ["ICICI Bank Ltd", "INE090A01021", "100", "40", "0.4"]]
+        port = cc.parse_amc(rows, "frac")
+        self.assertEqual([round(r["pct"], 2) for r in port["rows"]], [60.0, 40.0])
+
     def test_shareholding_pattern_xbrl(self):
         with open(os.path.join(F, "shp-example.xml")) as fh:
             res = cc.parse_shp_xbrl(fh.read())
