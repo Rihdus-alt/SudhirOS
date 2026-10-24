@@ -216,6 +216,11 @@ async function main() {
     check("phone width: nothing scrolls sideways", w[0] <= w[1] + 1, "scrollWidth " + w[0] + " vs " + w[1]);
     await shot(page, "D-phone-dark");
     if (SHOTS) { const cards = page.locator("#tmOut > .card"); for (let i = 0; i < (await cards.count()); i++) await cards.nth(i).screenshot({ path: path.join(SHOTS, "D-card" + i + ".png") }); await page.locator(".tm-ctl").screenshot({ path: path.join(SHOTS, "D-controls.png") }); }
+    await page.click("#tm_scan");
+    await page.waitForFunction(() => !document.querySelector("#tm_scancancel") && document.querySelectorAll("#tmScanOut tr").length > 3, null, { timeout: 180000 });
+    const w2 = await page.evaluate(() => [document.documentElement.scrollWidth, window.innerWidth]);
+    check("phone width, dark: the scan table does not push the page sideways", w2[0] <= w2[1] + 1, "scrollWidth " + w2[0] + " vs " + w2[1]);
+    if (SHOTS) await page.locator("#tmScanOut").screenshot({ path: path.join(SHOTS, "D-scan.png") });
     check("no console or page errors (phone, dark)", errors.length === 0, errors.join(" | "));
     await ctx.close();
   }
@@ -266,7 +271,7 @@ async function main() {
   }
   // ------------------------------------------------------------ F. the Trade tab checks every plan, and a failing one needs a second tap
   {
-    const { ctx, page, errors } = await launch("2026-10-23T11:02:00+05:30");
+    const { ctx, page, errors } = await launch("2026-10-23T11:02:00+05:30", { viewport: { width: 390, height: 900 }, dark: true });
     await page.click('#nav button[data-view="trade"]');
     await page.waitForSelector("#chain button[data-pick]", { timeout: 15000 });
     check("before a contract is picked there is nothing to check", (await page.locator("#tmGate").innerHTML()).trim() === "", await page.locator("#tmGate").innerHTML());
@@ -276,7 +281,9 @@ async function main() {
     const gate = (g.match(/\b(PASS|WATCH|FAIL)\b/) || [])[1];
     check("picking a contract runs the Time Machine on the plan, with the gate, the odds and the candle size", !!gate && /Chance of a profit/.test(g) && /reaches T1/.test(g) && /-minute candles/.test(g) && textOK(g), g.slice(0, 400));
     check("it names the plan it checked (entry, stop, targets)", /Your levels: entry/.test(g) && /stop .*\(−10%\)/.test(g), g);
-    await shot(page, "F-trade-gate");
+    await shot(page, "F-trade-gate-phone-dark");
+    const wf = await page.evaluate(() => [document.documentElement.scrollWidth, window.innerWidth]);
+    check("phone width, dark: the gate card does not push the page sideways", wf[0] <= wf[1] + 1, "scrollWidth " + wf[0] + " vs " + wf[1]);
     const btn = () => page.locator("#save").innerText();
     check("the Log button says so when the gate fails", gate !== "FAIL" || /Log anyway/.test(await btn()), await btn());
     await page.click("#save");

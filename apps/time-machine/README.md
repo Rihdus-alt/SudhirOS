@@ -50,7 +50,7 @@ only from data the app collects itself, and only these things:
    kept between 10% and 70%.
 4. **Speed.** Milliseconds per path and candle on this device, to size path counts for the scan.
 
-The saved sessions (`tmsess/`, full 5-minute sessions, kept 120 a day-index) are data, and keep growing: the feed holds
+The saved sessions (`tmsess/`, full 5-minute sessions, the newest 120 of each index are kept) are data, and keep growing: the feed holds
 only about three sessions, so the bootstrap's library, the replay and the volatility profile get a day richer each day
 the app is opened. Observations (`tmobs/`) and predictions (`tmpred/`) wait there until the tape that settles them is saved.
 
