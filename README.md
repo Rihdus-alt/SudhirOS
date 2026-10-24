@@ -36,6 +36,15 @@ The zip is a single skill, `trader-india`, with the 17 skill folders inside
 it (several tools load code from their sibling folders, so they travel
 together) and a `SKILL.md` that routes each request to the right folder.
 
+## The Trading Desk's Time tab
+
+`apps/time-machine/` is the Time Machine as an app: the fifth tab of the Trading Desk page
+(Claude artifact). Intraday mode replays the desk's own plan (SL, T1, T2, the trailing
+ladder, out by 15:15) on 5-minute bars with the option repriced on every bar; swing mode is
+the daily-bar tool above, for futures, options or shares. It is the JavaScript port of the
+Python tool, held to it by tests, and it counts what a trade does on paths from several
+models. It does not predict. See [apps/time-machine/README.md](apps/time-machine/README.md).
+
 ## Layout
 
 ```
@@ -43,6 +52,7 @@ together) and a `SKILL.md` that routes each request to the right folder.
 .claude/settings.json             marketplaces known to this repo, the India pack enabled,
                                   broker order tools kept on "ask"
 plugins/trader-skill-india/       the India edition (skills, tools, tests)
+apps/time-machine/                the Time Machine as the Trading Desk's fifth tab (engine, UI, build, tests)
 scripts/build_claude_ai_skill.py  packages the India pack as one claude.ai skill zip
 ```
 
@@ -50,6 +60,12 @@ Run the India pack's tests (offline, standard library only):
 
 ```bash
 cd plugins/trader-skill-india && python3 -m unittest discover -s tests -v
+```
+
+And the Time Machine app's (Node 18+; the browser check also needs Playwright and Chromium):
+
+```bash
+node --test apps/time-machine/test/core.test.js apps/time-machine/test/intraday.test.js apps/time-machine/test/charts.test.js
 ```
 
 Not financial advice. Nothing in these plugins places an order without your

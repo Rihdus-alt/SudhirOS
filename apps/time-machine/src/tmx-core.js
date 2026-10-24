@@ -708,7 +708,8 @@
     const bid = num(d.buy_price != null ? d.buy_price : d.bp), ask = num(d.sell_price != null ? d.sell_price : d.sp);
     const iv = (num(d.iv) || 0) / 100;
     return { id: d.derivative_id, ltp: num(d.current_price), bid: bid || null, ask: ask || null, oi: num(d.oi) || 0,
-      oi_chg_pct: num(d.oi_change), volume: num(d.volume != null ? d.volume : d.v) || 0, iv: iv || null, lot_size: d.lot_size };
+      oi_chg_pct: num(d.oi_change), volume: num(d.volume != null ? d.volume : d.v) || 0, iv: iv || null, lot_size: d.lot_size,
+      delta: num(d.delta) };
   }
   /** INDmoney get_indian_stocks_option_chain output (object or its JSON text) -> a normalised chain. */
   function parseChain(obj, underlying) {
@@ -1022,7 +1023,7 @@
         const bars = gen(rng);
         const res = finish(runTrade(bars, t, k, hz));
         resAll.push(res); futMoney.push(moneyOf(res));
-        if (p < 160) keep.push(bars.map((b) => [b[0], b[1], b[2], b[3]]));
+        if (p < 400) keep.push(bars.map((b) => [b[0], b[1], b[2], b[3]]));
         if (leg) {
           const bte = leg.barsToExpiry, ro = runTrade(bars, t, k, bte ? Math.min(hz, bte) : hz);
           if (ro.entered && ro.cls === "horizon" && bte && bte <= hz) ro.cls = "expiry";
