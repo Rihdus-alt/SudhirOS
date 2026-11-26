@@ -734,9 +734,12 @@ def trail(position, bars, atr_now, cfg=None):
             p.update(closed=True, exit=round(px, 2), exit_date=b["date"])
             break
         if p["stage"] == "open" and ((b["high"] >= p["tp1"]) if long_ else (b["low"] <= p["tp1"])):
+            # a session that opens past TP1 fills the resting TP1 limit at that better open
+            fill = b["open"] if ((b["open"] >= p["tp1"]) if long_ else (b["open"] <= p["tp1"])) else p["tp1"]
             events.append({"date": b["date"], "event": "TP1: book %d%%, stop to break-even"
-                           % round(100 * k["tp1_exit_fraction"]), "price": p["tp1"]})
+                           % round(100 * k["tp1_exit_fraction"]), "price": round(fill, 2)})
             p["stage"] = "tp1"
+            p["tp1_fill"] = round(fill, 2)
             p["stop"] = p["entry"] if (long_ and p["entry"] > p["stop"]) or (not long_ and p["entry"] < p["stop"]) else p["stop"]
         if p["stage"] == "tp1" and ((b["high"] >= p["tp2"]) if long_ else (b["low"] <= p["tp2"])):
             events.append({"date": b["date"], "event": "TP2: trail the rest tighter", "price": p["tp2"]})
@@ -817,7 +820,7 @@ def backtest(c, cfg=None, enabled=SETUPS, cost_points=0.0, start=60, end=None):
             pos, ev = trail(pos, [c[j]], ind["atr"][j - 1] or lv["atr"], k)
             events += ev
             if before == "open" and pos["stage"] in ("tp1", "tp2") and not pos.get("closed"):
-                booked += k["tp1_exit_fraction"] * sgn * (pos["tp1"] - entry) / risk
+                booked += k["tp1_exit_fraction"] * sgn * (pos.get("tp1_fill", pos["tp1"]) - entry) / risk
                 frac_left -= k["tp1_exit_fraction"]
             j += 1
         if not pos.get("closed"):
@@ -826,7 +829,8 @@ def backtest(c, cfg=None, enabled=SETUPS, cost_points=0.0, start=60, end=None):
         r_total = booked + frac_left * r_rest - cost_points / risk
         trades.append({"setup": s["setup"], "direction": s["direction"], "signal_date": c[i]["date"],
                        "entry_date": c[i + 1]["date"], "entry": round(entry, 2), "stop": lv["stop"], "tp1": lv["tp1"],
-                       "tp2": lv["tp2"], "exit_date": pos["exit_date"], "exit": pos["exit"], "r": round(r_total, 3),
+                       "tp2": lv["tp2"], "tp1_fill": pos.get("tp1_fill"), "exit_date": pos["exit_date"],
+                       "exit": pos["exit"], "r": round(r_total, 3),
                        "bars": pos.get("bars_held", 0), "open_at_end": bool(pos.get("open_at_end")),
                        "events": [e["event"] for e in events]})
         exit_idx = next((n for n in range(i + 1, len(c)) if c[n]["date"] == pos["exit_date"]), end)

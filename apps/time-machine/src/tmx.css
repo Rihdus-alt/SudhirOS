@@ -1,0 +1,65 @@
+/* Time Machine tab. Tokens are validated with the dataviz skill's validate_palette.js (categorical, light and dark). */
+:root{--tm1:#2f5bd3;--tm2:#c56a00;--tm3:#7a4fc7;--tmgrid:#e3e6eb}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--tm1:#5280e3;--tm2:#c9820f;--tm3:#9672e6;--tmgrid:#262d37}}
+:root[data-theme="dark"]{--tm1:#5280e3;--tm2:#c9820f;--tm3:#9672e6;--tmgrid:#262d37}
+.tm-lead{margin:2px 0 8px;max-width:68ch}
+.tm-ctl .form{margin-top:10px}
+.tm-ctl .presets{margin-top:8px;display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.tm-ctl .presets button{font-size:13px;padding:5px 10px}
+.tm-pos{border:1px solid var(--accent);border-radius:10px;padding:8px 10px;margin-top:8px;background:var(--chip)}
+.tm-status{min-height:1.4em}
+.tm-tiles{grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}
+.tm-tiles .stat b{font-size:17px}
+.tm-tiles .stat .by{display:block;margin-top:2px;font-size:11.5px;color:var(--muted);line-height:1.35}
+.tm-tiles .stat .by i{font-style:normal;font-weight:600;color:var(--ink)}
+.tm-verdict{margin:8px 0 0;padding:10px 12px;border-radius:10px;background:var(--chip);max-width:74ch}
+.tm-verdict.neg{background:var(--stopbg)}.tm-verdict.pos{background:var(--okbg)}.tm-verdict.mix{background:var(--warnbg)}
+.tm-verdict b{display:block;margin-bottom:2px}
+.tm-notes{margin:8px 0 0;padding-left:18px;font-size:13.5px;max-width:74ch}
+.tm-notes li{margin:3px 0}
+.tm-table{min-width:470px}.tm-table td:first-child{min-width:128px}
+.tm-table td.num,.tm-table th.num{text-align:right;white-space:nowrap}
+.tm-table th small{display:block;font-weight:400}
+.tm-table td small{display:block;color:var(--muted);font-size:11.5px}
+.tm-table tr.best td{background:var(--okbg)}
+.tm-table tr.sub td{color:var(--muted);font-size:12.5px}
+.tm-chart{margin-top:8px}
+.tm-chart svg{width:100%;max-width:560px;height:auto;display:block}
+.tm-chart text{fill:var(--muted);font-size:10.5px}
+.tm-chart text.inb{fill:var(--card);font-size:11px;font-weight:600}
+.tm-chart text.lab{fill:var(--ink);font-size:11px}
+.tm-chart text.rowlab{fill:var(--ink);font-size:11.5px}
+.tm-chart .ax{stroke:var(--tmgrid);stroke-width:1}
+.tm-chart .zero{stroke:var(--muted);stroke-width:1;stroke-dasharray:3 3}
+.tm-chart .lv{stroke-width:1.2;stroke-dasharray:5 3}
+.tm-chart .lv.sl{stroke:var(--down)}.tm-chart .lv.tp{stroke:var(--up)}.tm-chart .lv.en{stroke:var(--muted)}
+.tm-chart .band1{fill:var(--tm1);opacity:.13}.tm-chart .band2{fill:var(--tm1);opacity:.26}
+.tm-chart .med{fill:none;stroke:var(--tm1);stroke-width:2}
+.tm-chart .pth{fill:none;stroke:var(--tm1);stroke-width:1;opacity:.13}
+.k-stop{fill:var(--down)}.k-lock{fill:var(--warn)}.k-win{fill:var(--up)}.k-time{fill:var(--muted)}.k-gap{fill:var(--line)}
+.k-neg{fill:var(--down)}.k-pos{fill:var(--up)}
+.tm-legend{display:flex;flex-wrap:wrap;gap:3px 14px;font-size:12px;color:var(--muted);margin-top:6px}
+.tm-legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+.tm-legend i.k-stop{background:var(--down)}.tm-legend i.k-lock{background:var(--warn)}.tm-legend i.k-win{background:var(--up)}.tm-legend i.k-time{background:var(--muted)}.tm-legend i.k-gap{background:var(--line)}
+.tm-legend i.m1{background:var(--tm1)}.tm-legend i.m2{background:var(--tm2)}.tm-legend i.m3{background:var(--tm3)}
+.tm-chip{display:inline-block;padding:1px 8px;border-radius:999px;font-size:11.5px;font-weight:600;margin-left:4px}
+.tm-chip.m1{background:var(--tm1);color:var(--card)}.tm-chip.m2{background:var(--tm2);color:var(--card)}.tm-chip.m3{background:var(--tm3);color:var(--card)}
+.tm-grid td{text-align:center;padding:7px 4px;font-variant-numeric:tabular-nums}
+.tm-grid td.cur{outline:2px solid var(--ink);outline-offset:-2px}
+.tm-fine{font-size:12px;color:var(--muted);max-width:78ch}
+.tm-prog{height:4px;background:var(--chip);border-radius:2px;overflow:hidden;margin-top:6px}
+.tm-prog>div{height:100%;width:0;background:var(--accent);transition:width .15s}
+/* the gate: pass / watch / fail / not checked, on the Trade tab, in the scan, in the journal */
+.tmg{border:1px solid var(--line);border-radius:10px;padding:9px 11px;margin-top:10px;background:var(--chip)}
+.tmg-pass.tmg{background:var(--okbg);border-color:var(--up)}.tmg-watch.tmg{background:var(--warnbg);border-color:var(--warn)}.tmg-fail.tmg{background:var(--stopbg);border-color:var(--down)}
+.tmg-chip{display:inline-block;padding:1px 9px;border-radius:999px;font-size:11.5px;font-weight:700;letter-spacing:.04em;background:var(--muted);color:var(--card)}
+.tmg-pass .tmg-chip{background:var(--up)}.tmg-watch .tmg-chip{background:var(--warn)}.tmg-fail .tmg-chip{background:var(--down)}
+.tmg-reason{margin-top:4px;font-size:13.5px}
+.tm-chip.tmg-pass{background:var(--up);color:var(--card)}.tm-chip.tmg-watch{background:var(--warn);color:var(--card)}.tm-chip.tmg-fail{background:var(--down);color:var(--card)}
+.tm-chip.tmg-none,.tm-chip.tmg-error{background:var(--chip);color:var(--muted);border:1px solid var(--line)}
+/* the A+ card on the Now tab */
+.ap-plan{margin-top:6px}
+.ap-grade{display:inline-block;padding:2px 10px;border-radius:8px;font-weight:800;font-size:13px;letter-spacing:.03em;background:var(--chip);color:var(--ink);border:1px solid var(--line)}
+.ap-grade.aplus{background:var(--accent);color:var(--card);border-color:var(--accent)}
+#apCard .ladder{width:100%}
+@media (max-width:520px){.tm-tiles .stat b{font-size:16px}}

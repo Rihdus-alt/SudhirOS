@@ -26,6 +26,11 @@ Score: 1 + 1 if ADX >= 25 + 0.5 if volume is 1.5x its 20-day average (+0.5 more 
 
 A signal is not a prediction. Its track record says how this exact rule did here before, with a 95%
 confidence interval that is wide when trades are few.
+
+Every signal also goes through the Time Machine (india-fno-timemachine): its bootstrap of this chart's own
+days and the option-implied paths, after charges, boiled down to PASS (a method is significantly positive
+and none negative), WATCH (none can be told from zero) or FAIL (one is significantly negative). The scan is
+ordered pass, watch, fail. --no-timemachine skips it.
 """
 
 import argparse
@@ -50,6 +55,22 @@ def _core():
 f = _core()
 
 
+def _timemachine():
+    """The Time Machine sits in the sibling folder; every signal goes through it unless --no-timemachine."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    path = os.path.join(os.path.dirname(here), "india-fno-timemachine", "timemachine.py")
+    if not os.path.exists(path):
+        return None
+    spec = importlib.util.spec_from_file_location("timemachine", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+tm = _timemachine()
+TM_PATHS = 4000
+
+
 def symbol_of(path):
     base = os.path.basename(path)
     for sep in ("-", "_", "."):
@@ -72,7 +93,7 @@ def track_record(c, setup, direction, cfg, cost_points):
     return f.stats(trades)
 
 
-def scan_one(sym, c, cfg, lot=None, chain=None, now_utc=None, enabled=f.SETUPS, history=True):
+def scan_one(sym, c, cfg, lot=None, chain=None, now_utc=None, enabled=f.SETUPS, history=True, tm_paths=TM_PATHS):
     ind = f.indicators(c, cfg)
     i = len(c) - 1
     sigs = f.signals_at(c, ind, i, enabled)
@@ -99,6 +120,10 @@ def scan_one(sym, c, cfg, lot=None, chain=None, now_utc=None, enabled=f.SETUPS, 
                 item["option_error"] = str(e)
         if history:
             item["track_record"] = track_record(c, s["setup"], s["direction"], cfg, cost_points)
+        if tm_paths and tm is not None:
+            size = (item.get("option") or {}).get("lots") or (item.get("futures") or {}).get("lots") or 1
+            item["time_machine"] = tm.gate(c, cfg, s["direction"], s["setup"], None, None, None, None, chain, now_utc, lot,
+                                           size, sym, tm_paths)
         out.append(item)
     return out
 
@@ -110,7 +135,8 @@ def fmt(x):
 def render(items, proven_only=False):
     lines = []
     shown = 0
-    for it in sorted(items, key=lambda x: (-x["score"], x["symbol"])):
+    rank = (tm.GATE_RANK if tm is not None else {})
+    for it in sorted(items, key=lambda x: (rank.get((x.get("time_machine") or {}).get("gate"), 1), -x["score"], x["symbol"])):
         tr = it.get("track_record") or {}
         proven = tr.get("trades", 0) >= 5 and (tr.get("expectancy_r") or 0) > 0
         if proven_only and not proven:
@@ -171,6 +197,8 @@ def render(items, proven_only=False):
                             "" if proven else "  <- NOT a proven edge here (needs 5+ trades and positive expectancy)"))
         elif "track_record" in it:
             lines.append("  track record here: no earlier trades of this setup in the data")
+        if it.get("time_machine"):
+            lines.extend("  " + x for x in tm.gate_line(it["time_machine"]))
         lines.append("")
     if not shown:
         lines.append("No setup fired on the last closed bar%s." % (" with a positive track record" if proven_only else ""))
@@ -191,6 +219,10 @@ def main(argv=None):
     ap.add_argument("--now", help="ISO time for the option clock (no offset = IST); default: each chain's price time")
     ap.add_argument("--proven-only", action="store_true", help="only signals whose setup made money here before")
     ap.add_argument("--no-history", action="store_true", help="skip the per-signal backtest")
+    ap.add_argument("--no-timemachine", action="store_true",
+                    help="skip the Time Machine gate (every signal otherwise goes through it and the scan is ordered "
+                         "pass, watch, fail)")
+    ap.add_argument("--tm-paths", type=int, default=TM_PATHS, help="paths per method for the gate (default %d)" % TM_PATHS)
     ap.add_argument("--write", nargs="?", const="trader/fno/scan.json", metavar="PATH")
     ap.add_argument("--json", action="store_true")
     a = ap.parse_args(argv)
@@ -221,7 +253,8 @@ def main(argv=None):
                 chain = f.parse_chain(chains[sym], sym) if sym in chains else None
                 now = f.parse_now(a.now, chain)
                 lot = lots.get(sym) or (chain or {}).get("lot_size") or f.INDEX_LOTS.get(sym)
-                items += scan_one(sym, c, cfg, lot, chain, now, tuple(a.setups), not a.no_history)
+                items += scan_one(sym, c, cfg, lot, chain, now, tuple(a.setups), not a.no_history,
+                                  0 if a.no_timemachine else a.tm_paths)
             except f.FnoError as e:
                 errors.append("%s: %s" % (sym, e))
     except f.FnoError as e:

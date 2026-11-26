@@ -1,9 +1,10 @@
 # The Trader skill, India edition
 
-16 Claude skills for Indian stocks and F&O: copy a mutual fund or an investor
+17 Claude skills for Indian stocks and F&O: copy a mutual fund or an investor
 from SEBI disclosures, watch NSE/BSE filings and insider trades, screen
 futures and options with a stop-loss, targets and a trailing stop that are
-backtested on real data, size every trade in whole shares or lots with real
+backtested on real data, replay every way a trade can end with the odds of
+each (the Time Machine), size every trade in whole shares or lots with real
 charges, check SEBI and exchange rules, and never place an order without
 your yes.
 
@@ -34,7 +35,7 @@ cp -r SudhirOS/plugins/trader-skill-india/india-* ~/.claude/skills/
 
 The tools need Python 3.8 or newer. Nothing to pip install.
 
-## The sixteen
+## The seventeen
 
 | command | job | what it does |
 | --- | --- | --- |
@@ -54,6 +55,7 @@ The tools need Python 3.8 or newer. Nothing to pip install.
 | `/india-fno-plan` | F&O Planner | One trade, exactly: levels on the underlying, the futures (basis) and the option premium (Black-76 with decay), whole lots, the Kite symbol, the entry order and the protective SL/target orders; trails the stop each session, handles expiry and physical delivery, keeps the F&O journal. |
 | `/india-fno-chain` | Option Chain | Forward from put-call parity, IV and delta per strike, ATM IV and expected move, PCR, max pain, OI walls and additions, spreads. |
 | `/india-fno-backtest` | Backtester | The same rules replayed with no look-ahead and every charge: win rate with its 95% interval, break-even win rate, expectancy and t, out-of-sample split, a plain verdict. |
+| `/india-fno-timemachine` | Time Machine | Reads the chart and replays one trade every way it can end (stop, gap through the stop, time stop, TP1 then break-even, TP1 or TP2 then trailed, still open, held to expiry) three ways: the chart's own past occurrences, a block bootstrap of its real days, and the option chain's implied volatility. Each outcome's probability with a 95% interval, R and rupees per lot for futures, the option repriced along every path, or cash shares; a stop/target sensitivity grid. |
 
 ## How to use it
 
@@ -67,6 +69,8 @@ analyst -> screener -> budget -> risk -> broker       (pick your own)
 rebalance / tax -> risk -> broker                     (maintain)
 fno-chain -> fno-scan -> fno-plan -> risk -> broker   (F&O, with fno-plan trail after each session)
 fno-backtest                                          (before trusting any setup)
+fno-scan -> fno-timemachine -> fno-plan               (every way this one trade can end, before taking it;
+                                                      scan and plan run the Time Machine gate themselves)
 costs                                                 (any time)
 ```
 
@@ -113,9 +117,18 @@ everything that can be: the maths, the costs, the rules, and the measurement.
 - **The measurement.** Every signal shows its own backtest on that
   underlying. On a real year of NIFTY, RELIANCE and HDFC Bank daily bars, the
   four setups pooled to 49 trades, 49% wins (95% interval 36-62%) against a
-  53% break-even: -0.06R a trade after costs, no edge. Trend pullbacks looked
-  significant in the first 70% of the data (+0.39R, t 2.4) and lost -0.39R in
+  52% break-even: -0.05R a trade after costs, no edge. Trend pullbacks looked
+  significant in the first 70% of the data (+0.41R, t 2.4) and lost -0.39R in
   the held-out 30%. The pack says this to you instead of hiding it.
+- **Every outcome.** `/india-fno-timemachine` plays one trade forward
+  through every path its three models allow (the chart's own history, a
+  bootstrap of its real days, the option chain's implied volatility) with
+  the same exit engine the planner uses, and counts how each path ends.
+  On the NIFTY short of 2026-10-19 (2 lots): stop-loss before TP1 in 37%
+  of bootstrap paths and 36% of implied ones, TP2 in 21% and 15%,
+  expectancy -0.01R (95% -0.10 to +0.08 once the single year of history is
+  counted) and -0.06R after costs, and the 5-session October put still held
+  at expiry in 58-62% of paths.
 - **The rules.** Whole lots (NIFTY 65, BANKNIFTY 30 from the 2025 revision;
   the chain's lot size wins), STT 0.05%/0.15% from April 2026, the exchange's
   execution band, expiry on Tuesday (moved earlier for holidays), physical
@@ -171,6 +184,7 @@ python3 india-fno-scan/scan.py --candles NIFTY-1d.json --chain NIFTY=nifty-chain
 python3 india-fno-plan/plan.py new NIFTY --candles NIFTY-1d.json --direction short --chain nifty-chain.json
 python3 india-fno-plan/plan.py trail NIFTY-20261019-OPT --candles NIFTY-1d.json      # after each session
 python3 india-fno-backtest/backtest.py NIFTY-1d.json RELIANCE-1d.json --lots RELIANCE=500 --split 0.3
+python3 india-fno-timemachine/timemachine.py --candles NIFTY-1d.json --chain nifty-chain.json --lots 2 --grid
 ```
 
 ```bash
@@ -245,6 +259,7 @@ india-fno-scan/   SKILL.md, scan.py
 india-fno-plan/   SKILL.md, plan.py, fnocore.py (the shared F&O engine)
 india-fno-chain/  SKILL.md, chain.py
 india-fno-backtest/ SKILL.md, backtest.py
+india-fno-timemachine/ SKILL.md, timemachine.py
 tests/            unittest suite + offline fixtures
 ```
 

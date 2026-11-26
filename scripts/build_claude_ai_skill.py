@@ -5,7 +5,7 @@
     python3 scripts/build_claude_ai_skill.py --out x.zip
 
 claude.ai takes one skill per upload, and several of the tools load code from their sibling folders
-(../india-costs/costs.py, ../india-fno-plan/fnocore.py). So the 16 skill folders go into a single skill,
+(../india-costs/costs.py, ../india-fno-plan/fnocore.py). So the skill folders go into a single skill,
 "trader-india", side by side as they sit in the plugin, under a SKILL.md that routes to the right folder.
 The tests stay out: they belong to the repo. Standard library only.
 """
@@ -22,9 +22,9 @@ NAME = "trader-india"
 SKIP_DIRS = {"tests", "__pycache__", ".claude-plugin", "trader"}
 
 DESCRIPTION = (
-    "Indian stocks and F&O toolkit (NSE/BSE, SEBI rules, Income-tax Act, rupees): 16 tools in one skill. "
+    "Indian stocks and F&O toolkit (NSE/BSE, SEBI rules, Income-tax Act, rupees): 17 tools in one skill. "
     "F&O screening with stop-loss, TP1/TP2 and trailing stops, option-chain analytics, Black-76 option "
-    "levels and an honest backtester; whole-share and whole-lot sizing with STT and every charge; SEBI and "
+    "levels, an honest backtester and a Time Machine that replays every way a trade can end; whole-share and whole-lot sizing with STT and every charge; SEBI and "
     "exchange risk checks; capital gains and F&O tax; copy a mutual fund or investor from SEBI disclosures; "
     "insider trades, pledges and bulk deals; exchange filings; quarterly results; a stock screener; NSE "
     "price alerts; rebalancing; order tickets that need the user's yes. Use for any Indian market request "

@@ -8,7 +8,7 @@
   "plugins": [
     {
       "name": "trader-skill-india",
-      "description": "Sixteen skills for Indian stocks and F&O (NSE/BSE): copy a mutual fund or investor from SEBI disclosures; filings, insider trades and bulk deals; quarterly results; a screener; F&O trade screening with stop-loss, TP1/TP2 and trailing stops, Black-76 option levels, option-chain analytics and an honest backtester; whole-share and whole-lot sizing with STT and charges; SEBI and exchange risk checks; capital gains and F&O tax; NSE alerts; rebalancing; order tickets that need your yes.",
+      "description": "Seventeen skills for Indian stocks and F&O (NSE/BSE): copy a mutual fund or investor from SEBI disclosures; filings, insider trades and bulk deals; quarterly results; a screener; F&O trade screening with stop-loss, TP1/TP2 and trailing stops, Black-76 option levels, option-chain analytics, an honest backtester and a Time Machine that replays every way a trade can end; whole-share and whole-lot sizing with STT and charges; SEBI and exchange risk checks; capital gains and F&O tax; NSE alerts; rebalancing; order tickets that need your yes.",
       "source": "./plugins/trader-skill-india",
       "category": "productivity",
       "homepage": "https://github.com/rihdus-alt/SudhirOS/tree/main/plugins/trader-skill-india"
