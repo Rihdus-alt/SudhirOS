@@ -9,6 +9,7 @@ const DISC_TEXT = `THREE DISCIPLINE RULES (adopted 21 Oct 2026; rule 2 amended 2
 3. RANGE FILTER. If the last 6–8 closed 5m candles sit inside a 400-point SENSEX range (about 120 points NIFTY), there are no entries until a 5m close breaks the range by the buffer (25 pts SENSEX, ~8 pts NIFTY). Call it "RANGE: no trade" and note the two break levels.
 DEFINITIONS: A+ = a 5m close beyond the level on BOTH indices on the same candle, then the two-candle hold (25 Nov rule). Buffer = 0.035% of the index (25 pts SENSEX, ~8 pts NIFTY).`;
 const discCfg = () => TMD.cfgWith(S.rules.disc);
+const discLock = () => S.rules.profitLock == null ? 10000 : (+S.rules.profitLock || 0);   // the rule says 10,000; an explicit 0 in config/rules turns the lock off
 const dirOfTrade = t => t.type === "PE" ? -1 : t.type === "CE" ? 1 : /put|pe\b/i.test(t.instrument || "") ? -1 : 1;
 const dirWord = d => d > 0 ? "calls" : "puts";
 const lotsOfTrade = t => { const ix = ixOfTrade(t), L = +t.lotSize || (S.rules.lotSizes && S.rules.lotSizes[ix]) || (IDX[ix] && IDX[ix].lot) || 1; return Math.round((+t.qty || 0) / L); };
@@ -46,7 +47,7 @@ function discRangeAt(ix, date, time) {
 function discCheck(e, prior) {
   const ps = prior.map(p => ({ dir: dirOfTrade(p), time: p.time || "00:00", closedAt: tradeClosedAt(p), stopped: hitStop(p) }));
   return TMD.checkEntry({ date: e.date, time: e.time, dir: e.dir, lots: e.lots, ix: e.ix, aplus: e.aplus, prior: ps,
-    realisedBefore: prior.reduce((a, p) => a + realisedBy(p, e.time), 0), range: discRangeAt(e.ix, e.date, e.time), lock: +S.rules.profitLock || 0, cfg: S.rules.disc });
+    realisedBefore: prior.reduce((a, p) => a + realisedBy(p, e.time), 0), range: discRangeAt(e.ix, e.date, e.time), lock: discLock(), cfg: S.rules.disc });
 }
 const discNowEntry = (dir, lots, ix, aplus) => { const t = ist(); return { date: t.date, time: t.hm, dir, lots, ix, aplus }; };
 function discCheckNow(dir, lots, ix, aplus) {
@@ -111,13 +112,12 @@ function discSyncBox() {
 }
 /** The second tap: before the save, an entry that breaks a rule is held once. Returns true to stop the save. */
 function discBeforeSave(doc) {
-  const { e, res } = discFormChecks(), bad = res.filter(r => !r.ok), key = [e.date, e.time, e.dir, e.lots, doc.instrument].join("|");
-  if (bad.length && S.discConfirm !== key) {
+  const { e, res } = discFormChecks(), bad = res.filter(r => !r.ok), key = [e.date, $("f_time").value || "now", e.dir, e.lots, doc.instrument].join("|");
+  if (bad.length && S.discConfirm !== key) {                // the confirmation stands until the trade is saved, or the entry changes
     S.discConfirm = key;
     $("saveMsg").innerHTML = bad.map(r => esc("Rule " + r.rule + ": " + r.text)).join("<br>") + "<br>Tap “Log anyway” to record the trade as taken; it will be flagged in the journal.";
     discSaveBtn(); return true;
   }
-  S.discConfirm = null;
   doc.aplus = e.aplus ? JSON.parse(JSON.stringify(e.aplus)) : null;
   if (bad.length) doc.disc = { rules: bad.map(r => r.rule), overridden: true, at: ist().hm };
   return false;
@@ -128,7 +128,7 @@ function discSaveBtn() { if (typeof tmSaveBtn === "function") tmSaveBtn(); }
 function discSummary() {
   const t = ist(), todayTrades = dayTrades(t.date).filter(p => (p.time || "") <= t.hm), cfg = discCfg();
   const sides = [1, -1].map(dir => ({ dir, r: discCheck(discNowEntry(dir, 4, S.ix, discAplusNow(dir) || (S.disc && S.disc[t.date] ? null : undefined)), todayTrades)[0] }));
-  const realisedNow = todayTrades.reduce((a, p) => a + realisedBy(p, t.hm), 0), lock = +S.rules.profitLock || 0;
+  const realisedNow = todayTrades.reduce((a, p) => a + realisedBy(p, t.hm), 0), lock = discLock();
   const ranges = ["SENSEX", "NIFTY"].map(ix => ({ ix, r: discRangeAt(ix, t.date, t.hm) }));
   return { t, cfg, sides, realisedNow, lock, lockOn: !!lock && realisedNow >= lock, ranges };
 }

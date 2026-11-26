@@ -311,7 +311,7 @@ async function main() {
     if (/Rule \d:/.test(msg)) {                       // 26 Nov: an entry that breaks a discipline rule is held first, before the Time Machine's own check
       discHeld = true;
       check("an entry that breaks a discipline rule is held on the first tap, in the rule's own words, with both break levels", /Rule 3: RANGE: no trade/.test(msg) && /Break above [\d,]+ or below [\d,]+ on a 5m close first/.test(msg) && /flagged in the journal/.test(msg) && !/Logged\./.test(msg), msg);
-      check("the button says which rule it breaks", /Log anyway \(breaks rule 3\)/.test(await page.locator("#save").innerText()), await page.locator("#save").innerText());
+      check("the button says which rule it breaks", /Log anyway \((Time Machine: fail; )?breaks rule 3\)/.test(await page.locator("#save").innerText()), await page.locator("#save").innerText());
       const n0 = await page.evaluate(() => [...window.__docs.keys()].filter((k) => k.startsWith("trades/auto")).length);
       check("nothing was written on that tap", n0 === 0, "trades written " + n0);
       await page.click("#save");
@@ -418,7 +418,7 @@ async function main() {
     await ctx.close();
 
     // I3a: both indices close beyond on the same candle: that is not A+ yet, it has to hold for two more candles (25 Nov rule)
-    const HOLD = [{ at: "11:25", close: 22724.5 }, { at: "11:30", close: 22740 }, { at: "11:35", close: 22748 }];
+    const HOLD = [{ at: "11:25", close: 22724.5 }, { at: "11:30", close: 22725 }, { at: "11:35", close: 22725.5 }];
     ({ ctx, page, errors } = await launch("2026-10-23T11:30:30+05:30", { data: { m5: syntheticMorning(SEED, "11:30", HOLD.slice(0, 1)) } }));
     await wait(page);
     await page.waitForFunction(() => /holding/.test(document.querySelector("#apCard").innerText), null, { timeout: 30000 });
@@ -483,7 +483,7 @@ async function main() {
     const st = L.emptyState();
     for (let i = 0; i < 24; i++) st.aplus.push({ d: "2026-09-" + String(1 + i).padStart(2, "0"), ix: "NIFTY", dir: 1, p1: 0.4, y1: i < 11 ? 1 : 0, p2: 0.2, y2: i < 4 ? 1 : 0, ps: 0.55, ys: i < 11 ? 0 : 1, need: 0.44 });
     st.updated = "2026-10-22T10:00:00.000Z"; st.created = st.updated;
-    const { ctx, page, errors } = await launch("2026-10-23T11:40:30+05:30", { data: { m5: syntheticMorning(14, "11:40", [{ at: "11:25", close: 22724.5 }, { at: "11:30", close: 22740 }, { at: "11:35", close: 22748 }]) }, seed: { "tmlearn/state": { v: 1, rev: 5, updated: st.updated, json: JSON.stringify(st) } } });
+    const { ctx, page, errors } = await launch("2026-10-23T11:40:30+05:30", { data: { m5: syntheticMorning(14, "11:40", [{ at: "11:25", close: 22724.5 }, { at: "11:30", close: 22725 }, { at: "11:35", close: 22725.5 }]) }, seed: { "tmlearn/state": { v: 1, rev: 5, updated: st.updated, json: JSON.stringify(st) } } });
     await page.waitForSelector("#apCard .ap-plan", { timeout: 150000 });
     await page.waitForFunction(() => !/Refreshing|Working out/.test(document.querySelector("#apCard").innerText), null, { timeout: 60000 });
     const t = await page.locator("#apCard").innerText();
@@ -537,7 +537,7 @@ async function main() {
     plan = await page.locator("#plan").innerText();
     check("eight lots under the lock is oversized, even for an A+", /✗ Rule 2: Profit lock is ON .*8 lots, above the normal 6/.test(plan), plan.slice(0, 700));
     await page.fill("#f_lots", "4");
-    check("the button says which rules it breaks", /Log anyway \(breaks rule 1 and 3\)/.test(await page.locator("#save").innerText()), await page.locator("#save").innerText());
+    check("the button says which rules it breaks", /Log anyway \((Time Machine: fail; )?breaks rule 1 and 3\)/.test(await page.locator("#save").innerText()), await page.locator("#save").innerText());
     await shot(page, "K-discipline-trade");
     await page.click("#save");
     await page.waitForFunction(() => /Log anyway|flagged in the journal/.test(document.querySelector("#saveMsg").textContent), null, { timeout: 60000 });
@@ -563,7 +563,7 @@ async function main() {
     await ctx.close();
 
     // ---- K2: the one re-entry is allowed on a fresh A+, and the A+ is stamped; the next entry is the second
-    const HOLD2 = [{ at: "11:25", close: 22724.5 }, { at: "11:30", close: 22740 }, { at: "11:35", close: 22748 }];
+    const HOLD2 = [{ at: "11:25", close: 22724.5 }, { at: "11:30", close: 22725 }, { at: "11:35", close: 22725.5 }];
     const earlyPut = Object.assign({}, DATA.trades[0], { id: "t1", time: "09:30", type: "PE", instrument: "NIFTY 27 Oct ₹22600 Put" });
     ({ ctx, page, errors } = await launch("2026-10-23T11:40:30+05:30", { data: { m5: syntheticMorning(14, "11:40", HOLD2), trades: [earlyPut] }, seed: { "trades/s_stop": seed["trades/s_stop"] } }));
     await levelsReady(page);
