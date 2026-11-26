@@ -556,7 +556,7 @@ async function main() {
     jt = await page.locator("#journal").innerText();
     check("the 11:00 put taken after the lock, with no A+ in the day's record, is flagged", /Profit lock: not A\+/.test(jt) && /Re-entry after a stop-out without a fresh A\+/.test(jt), jt.slice(0, 1200));
     await page.click('#nav button[data-view="insights"]');
-    const rb = await page.locator("#perfRules").innerText();
+    const rb = await page.locator("#perfRules").evaluate((el) => el.textContent);          // inside a closed <details>, so innerText is empty
     check("the Insights rule-break table counts them", /Entered inside a range/.test(rb) && /Profit lock: not A\+/.test(rb) && /Re-entry/.test(rb), rb);
     check("no NaN / undefined on the discipline card", textOK(await page.locator("#discCard").innerText()), "card");
     check("no console or page errors (discipline)", errors.length === 0, errors.join(" | "));
