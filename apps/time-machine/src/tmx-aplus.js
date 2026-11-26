@@ -65,15 +65,18 @@
   /** The most recent fresh break: a closed candle beyond the trigger the levels had one candle earlier, whose own predecessor was
    *  not already beyond it, within the last `window` candles. levelsAt(k) gives the trigger the levels showed as of candle k-1.
    *  Candles: [{close, datetime_ist}] (closed ones only). Returns the break with its candle, or null. */
-  function findBreak(closed, dir, levelsAt, window) {
-    const n = closed.length;
+  function findBreak(closed, dir, levelsAt, window) { return findBreaks(closed, dir, levelsAt, window)[0] || null; }
+  /** Every fresh break in the last `window` candles, newest first. With the two-candle hold a break is only confirmed two candles
+   *  after it, and in that time price may have broken a higher level too: the newest break must not hide the older one. */
+  function findBreaks(closed, dir, levelsAt, window) {
+    const n = closed.length, out = [];
     for (let k = n - 1; k >= Math.max(1, n - (window || 3)); k--) {
       const lv = levelsAt(k);
       if (!lv || lv.trigger == null) continue;
       const beyond = (c) => (dir > 0 ? c > lv.trigger : c < lv.trigger);
-      if (beyond(closed[k].close) && !beyond(closed[k - 1].close)) return Object.assign({ k, t: String(closed[k].datetime_ist).slice(11, 16), close: closed[k].close, ago: n - 1 - k }, lv);
+      if (beyond(closed[k].close) && !beyond(closed[k - 1].close)) out.push(Object.assign({ k, t: String(closed[k].datetime_ist).slice(11, 16), close: closed[k].close, ago: n - 1 - k }, lv));
     }
-    return null;
+    return out;
   }
 
   /** The record of the app's own A+ calls: what each said (the models' chance of reaching T1 and T2 and of being stopped, and
@@ -114,5 +117,5 @@
     return { grade: "A+", misses: [] };
   }
 
-  return { wilson, structuralStop, breakeven, findBreak, record, sizeLots, grade, T1_CLASSES, r05 };
+  return { wilson, structuralStop, breakeven, findBreak, findBreaks, record, sizeLots, grade, T1_CLASSES, r05 };
 });

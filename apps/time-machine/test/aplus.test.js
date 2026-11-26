@@ -113,6 +113,19 @@ test("a break is the candle that closes beyond the trigger when its predecessor 
   assert.equal(moving.k, 5, "the trigger is the one the levels showed one candle earlier");
 });
 
+test("findBreaks returns every fresh break in the window, newest first, so a later break at a higher level does not hide an earlier one", () => {
+  // the level above 105 is 108: the candle at index 3 breaks 105, the one at index 5 breaks 108
+  const lv = (k) => ({ trigger: k <= 4 ? 105 : 108 });
+  const c = candles([100, 101, 102, 106, 107, 109]);
+  const all = A.findBreaks(c, 1, lv, 5);
+  assert.deepEqual(all.map((b) => b.k), [5, 3]);
+  assert.deepEqual(all.map((b) => b.ago), [0, 2]);
+  assert.equal(A.findBreak(c, 1, lv, 5).k, 5, "findBreak is still the newest");
+  assert.deepEqual(A.findBreaks(c, 1, lv, 2).map((b) => b.k), [5], "the window bounds it (ago 0 and 1 only)");
+  assert.deepEqual(A.findBreaks(c, 1, lv, 3).map((b) => b.k), [5, 3], "a window of 3 reaches ago 2");
+  assert.deepEqual(A.findBreaks(candles([100, 101, 102, 103]), 1, () => ({ trigger: 120 }), 5), []);
+});
+
 // ----------------------------------------------------------------------------------------- the record
 test("the record: a thin one says so; a long one is judged against what the plans needed, by interval", () => {
   const rng = T.makeRng("record");

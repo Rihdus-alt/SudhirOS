@@ -43,7 +43,8 @@ function syntheticMorning(seed, lastBarHm, breakClose) {
     if (hm > lastBarHm) break;
     const o = c, amp = 0.0005 * o, drift = i < 20 ? 0 : 0.00006 * o;
     c = o + (r() - 0.5) * 2 * amp + drift;
-    if (breakClose && hm === breakClose.at) c = breakClose.close;
+    const forced = [].concat(breakClose || []).find((x) => x.at === hm);
+    if (forced) c = forced.close;
     rows.push({ datetime_ist: "2026-10-23 " + hm + ":00", open: o, high: Math.max(o, c) + r() * 0.0002 * o, low: Math.min(o, c) - r() * 0.0002 * o, close: c, volume: 1000 });
   }
   return before.concat(rows);
@@ -306,6 +307,17 @@ async function main() {
     await page.click("#save");
     await page.waitForFunction(() => /Logged\./.test(document.querySelector("#saveMsg").textContent) || /Log anyway/.test(document.querySelector("#saveMsg").textContent), null, { timeout: 60000 });
     let msg = await page.locator("#saveMsg").innerText();
+    let discHeld = false;
+    if (/Rule \d:/.test(msg)) {                       // 26 Nov: an entry that breaks a discipline rule is held first, before the Time Machine's own check
+      discHeld = true;
+      check("an entry that breaks a discipline rule is held on the first tap, in the rule's own words, with both break levels", /Rule 3: RANGE: no trade/.test(msg) && /Break above [\d,]+ or below [\d,]+ on a 5m close first/.test(msg) && /flagged in the journal/.test(msg) && !/Logged\./.test(msg), msg);
+      check("the button says which rule it breaks", /Log anyway \(breaks rule 3\)/.test(await page.locator("#save").innerText()), await page.locator("#save").innerText());
+      const n0 = await page.evaluate(() => [...window.__docs.keys()].filter((k) => k.startsWith("trades/auto")).length);
+      check("nothing was written on that tap", n0 === 0, "trades written " + n0);
+      await page.click("#save");
+      await page.waitForFunction(() => /Logged\./.test(document.querySelector("#saveMsg").textContent) || /Time Machine finds/.test(document.querySelector("#saveMsg").textContent), null, { timeout: 60000 });
+      msg = await page.locator("#saveMsg").innerText();
+    }
     if (gate === "FAIL") {
       check("a failing plan is not logged on the first tap: it asks for a second", /Time Machine finds this plan negative after charges/.test(msg) && !/Logged\./.test(msg), msg);
       const n1 = await page.evaluate(() => [...window.__docs.keys()].filter((k) => k.startsWith("trades/auto")).length);
@@ -317,8 +329,10 @@ async function main() {
     check("the logged trade carries the check it was given", tr.length === 1 && tr[0].tm && ["pass", "watch", "fail"].includes(tr[0].tm.gate) && tr[0].tm.gate === gate.toLowerCase() && tr[0].tm.pred && tr[0].tm.pred.levels && !!tr[0].tmId, JSON.stringify(tr[0] && tr[0].tm).slice(0, 300));
     check("a failing plan that was logged anyway is marked as such", gate !== "FAIL" || tr[0].tm.overridden === true, JSON.stringify(tr[0].tm).slice(0, 200));
     check("the stored check is plain data (no undefined, no NaN)", !/undefined|NaN/.test(JSON.stringify(tr[0])), "doc");
+    check("a trade logged past a discipline rule says so, and says it was not A+", !discHeld || (tr[0].disc && tr[0].disc.overridden === true && tr[0].disc.rules.includes(3) && tr[0].aplus === null), JSON.stringify([tr[0].disc, tr[0].aplus]));
     await page.click('#nav button[data-view="journal"]');
     await page.waitForFunction(() => /TM (pass|watch|fail)/.test(document.querySelector("#journal").innerText), null, { timeout: 15000 });
+    check("the journal flags the entry made inside a range", !discHeld || /Entered inside a range \(RANGE: no trade\)/.test(await page.locator("#journal").innerText()), (await page.locator("#journal").innerText()).slice(0, 300));
     check("the journal shows the check beside the trade", /TM (pass|watch|fail)/.test(await page.locator("#journal").innerText()), await page.locator("#journal").innerText());
     check("no console or page errors (trade tab)", errors.length === 0, errors.join(" | "));
     await ctx.close();
@@ -403,14 +417,39 @@ async function main() {
     check("one index closing beyond its level is not A+: the card names the one that has not", /NIFTY closed above its A\+ level at 11:25; SENSEX has not: not A\+ yet/.test(t) && !/fired/.test(t), t.slice(0, 500));
     await ctx.close();
 
-    // I3: both break: the trade appears on its own
-    ({ ctx, page, errors } = await launch("2026-10-23T11:30:30+05:30", { data: { m5: syntheticMorning(SEED, "11:30", { at: "11:25", close: 22724.5 }) } }));
+    // I3a: both indices close beyond on the same candle: that is not A+ yet, it has to hold for two more candles (25 Nov rule)
+    const HOLD = [{ at: "11:25", close: 22724.5 }, { at: "11:30", close: 22740 }, { at: "11:35", close: 22748 }];
+    ({ ctx, page, errors } = await launch("2026-10-23T11:30:30+05:30", { data: { m5: syntheticMorning(SEED, "11:30", HOLD.slice(0, 1)) } }));
+    await wait(page);
+    await page.waitForFunction(() => /holding/.test(document.querySelector("#apCard").innerText), null, { timeout: 30000 });
+    t = await page.locator("#apCard").innerText();
+    check("both indices closed beyond on the same candle: not A+ yet, the card says it is holding, 0 of 2", /A\+ LONG holding · 0 of 2/.test(t) && /on the 11:25 candle/.test(t) && /not confirmed until the next 2 candles/.test(t) && !/Entry \(the ask\)/.test(t) && !/confirmed · break/.test(t), t.slice(0, 600));
+    check("no alert, no plan and no A+ record while it is only holding", (await page.locator("#alerts").innerText()).trim() === "" && !(await page.evaluate(() => [...window.__docs.keys()].some((k) => /^tmpred\/a_/.test(k) || (/^disc\//.test(k) && (window.__docs.get(k).aplus || []).length)))), await page.locator("#alerts").innerText());
+    const dc = await page.locator("#discCard").innerText();
+    check("the Discipline card shows the hold too", /A\+ LONG: both indices closed above their level at 11:25; held 0 of 2/.test(dc), dc);
+    await ctx.close();
+    // I3b: one candle held
+    ({ ctx, page, errors } = await launch("2026-10-23T11:35:30+05:30", { data: { m5: syntheticMorning(SEED, "11:35", HOLD.slice(0, 2)) } }));
+    await wait(page);
+    await page.waitForFunction(() => /holding/.test(document.querySelector("#apCard").innerText), null, { timeout: 30000 });
+    check("one candle held: 1 of 2", /A\+ LONG holding · 1 of 2/.test(await page.locator("#apCard").innerText()), await page.locator("#apCard").innerText());
+    await ctx.close();
+    // I3c: a candle that closes back inside before the hold is done cancels it
+    ({ ctx, page, errors } = await launch("2026-10-23T11:35:30+05:30", { data: { m5: syntheticMorning(SEED, "11:35", [HOLD[0], { at: "11:30", close: 22700 }]) } }));
+    await wait(page);
+    await page.waitForFunction(() => /no A\+ now/.test(document.querySelector("#apCard").innerText), null, { timeout: 30000 });
+    t = await page.locator("#apCard").innerText();
+    check("a close back inside the level cancels the hold: no A+, nothing pending", !/holding/.test(t) && !/confirmed · break/.test(t) && !/Entry \(the ask\)/.test(t), t.slice(0, 400));
+    await ctx.close();
+
+    // I3: the hold is done (two more candles beyond on both): the trade appears on its own
+    ({ ctx, page, errors } = await launch("2026-10-23T11:40:30+05:30", { data: { m5: syntheticMorning(SEED, "11:40", HOLD) } }));
     await wait(page);
     await page.waitForSelector("#apCard .ap-plan", { timeout: 150000 });
     await page.waitForFunction(() => !/Refreshing|Working out/.test(document.querySelector("#apCard").innerText), null, { timeout: 60000 });
     t = await page.locator("#apCard").innerText();
     const grade = (await page.locator("#apCard .ap-grade").first().innerText()).trim();
-    check("both indices closed beyond: an A+ LONG appears by itself with the contract, entry, stop and targets", /A\+ LONG fired · this candle/.test(t) && /SENSEX closed above 73,5\d\d at 11:25, NIFTY above 22,\d\d\d at 11:25/.test(t) && /Entry \(the ask\)/.test(t) && /Stop-loss/.test(t) && /Target 1/.test(t) && /Target 2/.test(t) && /index ≈ \d\d,\d\d\d/.test(t) && ["A+", "A"].includes(grade), grade + " | " + t.slice(0, 700));
+    check("both indices closed beyond: an A+ LONG appears by itself with the contract, entry, stop and targets", /A\+ LONG confirmed · break 11:25, held 2 candles/.test(t) && /SENSEX closed above 73,5\d\d and NIFTY above 22,\d\d\d on the same candle \(11:25\), and both held for 2 more/.test(t) && /Entry \(the ask\)/.test(t) && /Stop-loss/.test(t) && /Target 1/.test(t) && /Target 2/.test(t) && /index ≈ \d\d,\d\d\d/.test(t) && ["A+", "A"].includes(grade), grade + " | " + t.slice(0, 700));
     check("it shows the chance of reaching each target and of being stopped, each with its 95% band", /Chance of reaching T1\n\d+%\n95% band \d+–\d+%/.test(t) && /Chance of reaching T2\n\d+%\n95% band \d+–\d+%/.test(t) && /Stopped out first\n\d+%\n95% band \d+–\d+%/.test(t), t);
     const num = (re) => +(t.match(re) || [])[1];
     const t1p = num(/Chance of reaching T1\n(\d+)%/), t2p = num(/Chance of reaching T2\n(\d+)%/), stp = num(/Stopped out first\n(\d+)%/);
@@ -444,13 +483,108 @@ async function main() {
     const st = L.emptyState();
     for (let i = 0; i < 24; i++) st.aplus.push({ d: "2026-09-" + String(1 + i).padStart(2, "0"), ix: "NIFTY", dir: 1, p1: 0.4, y1: i < 11 ? 1 : 0, p2: 0.2, y2: i < 4 ? 1 : 0, ps: 0.55, ys: i < 11 ? 0 : 1, need: 0.44 });
     st.updated = "2026-10-22T10:00:00.000Z"; st.created = st.updated;
-    const { ctx, page, errors } = await launch("2026-10-23T11:30:30+05:30", { data: { m5: syntheticMorning(14, "11:30", { at: "11:25", close: 22724.5 }) }, seed: { "tmlearn/state": { v: 1, rev: 5, updated: st.updated, json: JSON.stringify(st) } } });
+    const { ctx, page, errors } = await launch("2026-10-23T11:40:30+05:30", { data: { m5: syntheticMorning(14, "11:40", [{ at: "11:25", close: 22724.5 }, { at: "11:30", close: 22740 }, { at: "11:35", close: 22748 }]) }, seed: { "tmlearn/state": { v: 1, rev: 5, updated: st.updated, json: JSON.stringify(st) } } });
     await page.waitForSelector("#apCard .ap-plan", { timeout: 150000 });
     await page.waitForFunction(() => !/Refreshing|Working out/.test(document.querySelector("#apCard").innerText), null, { timeout: 60000 });
     const t = await page.locator("#apCard").innerText();
     check("with 24 settled A+ calls the card quotes the record against what the plans needed, with its interval", /11 of 24 reached T1 \(46%, 95% band \d+–\d+%\) against 40% the models gave them and 44% they needed/.test(t) && /(cannot be told apart|includes the break-even)/.test(t), t.match(/Record of the app.*/) + "");
     check("and the odds shown are scaled by what the signal has done, saying so", /the models, scaled ×1\.\d\d by what the app's 24 settled A\+ calls did/.test(t), t.match(/Odds: .*/) + "");
     check("no console or page errors (A+ record)", errors.length === 0, errors.join(" | "));
+    await ctx.close();
+  }
+  // ------------------------------------------------------------ K. the three discipline rules (adopted 21 Oct 2026, rule 2 amended 21 Nov 2026)
+  {
+    const mk = (o) => Object.assign({ date: "2026-10-23", mode: "real", source: "app", lotSize: 20, exits: [], status: "open", tp: null, createdAt: "2026-10-23T04:00:00Z" }, o);
+    const seed = {
+      "trades/s_stop": mk({ time: "09:50", instrument: "SENSEX 23 Oct ₹72500 Call", underlying: "SENSEX", type: "CE", qty: 80, entry: 100, sl: 90, status: "closed", exits: [{ qty: 80, price: 90, time: "10:10" }] }),
+      "trades/s_win": mk({ time: "10:30", instrument: "SENSEX 23 Oct ₹72400 Put", underlying: "SENSEX", type: "PE", qty: 200, entry: 100, sl: 90, status: "closed", exits: [{ qty: 200, price: 160, time: "10:45" }] }),
+      "trades/s_after": mk({ time: "11:00", instrument: "NIFTY 27 Oct ₹22600 Put", underlying: "NIFTY", type: "PE", lotSize: 65, qty: 260, entry: 80, sl: 72 }),
+    };
+    const levelsReady = (page) => page.waitForFunction(() => window.__tmx && window.__tmx.S.levels && window.__tmx.S.levels.NIFTY && window.__tmx.S.levels.SENSEX, null, { timeout: 30000 });
+    const logThrough = async (page) => {                       // tap the button until the trade is logged: each rule or check that holds it asks for one more tap
+      const msgs = [];
+      for (let i = 0; i < 5; i++) {
+        await page.click("#save");
+        await page.waitForFunction(() => /Logged\.|Log anyway|Time Machine finds/.test(document.querySelector("#saveMsg").textContent), null, { timeout: 90000 });
+        const m = await page.locator("#saveMsg").innerText(); msgs.push(m);
+        if (/Logged\./.test(m)) break;
+      }
+      return msgs;
+    };
+    // ---- K1: inside a range, past the lock, and a second entry after a stop-out
+    let { ctx, page, errors } = await launch("2026-10-23T11:25:30+05:30", { data: { m5: syntheticMorning(14, "11:25") }, seed });
+    await levelsReady(page);
+    await page.evaluate(() => { window.__tmx.S.rules.disc = { from: { 2: "2026-10-01" } }; window.__tmx.renderAll(); });   // rule 2 came in on 21 Nov: bring it into force for a 23 Oct tape
+    await page.waitForFunction(() => /profit lock ON/.test(document.querySelector("#discCard").innerText), null, { timeout: 15000 });
+    let d = await page.locator("#discCard").innerText();
+    check("Discipline card, rule 3: both indices in a range, each with its two break levels", /SENSEX: RANGE: no trade\. Last \d+ candles inside [\d,]+–[\d,]+ \(since \d\d:\d\d\)\. Break above [\d,]+ or below [\d,]+ on a 5m close first/.test(d) && /NIFTY: RANGE: no trade\. Last \d+ candles inside [\d,]+–[\d,]+ \(since \d\d:\d\d\)\. Break above [\d,]+ or below [\d,]+ on a 5m close first/.test(d), d);
+    check("Discipline card, rule 2: the day's realised P&L is past 10,000, so the lock is on: A+ only, 4-6 lots", /Profit lock: realised \+₹1[12],\d\d\d of ₹10,000\. ON: only A\+ setups, 4–6 lots, or stop for the day\./.test(d), d);
+    check("Discipline card, rule 1: calls have used their one re-entry; puts have had no stop-out", /calls: Entry 2 after the 10:10 stop-out: one re-entry per setup, and it is used/.test(d) && /puts: No stop-out on this side today: a first entry\./.test(d), d);
+    check("the card carries the rules in the words they were adopted in", /THREE DISCIPLINE RULES \(adopted 21 Oct 2026; rule 2 amended 21 Nov 2026\)/.test(await page.locator("#discCard").evaluate((el) => el.textContent)) && /protect the day/.test(await page.locator("#discCard").evaluate((el) => el.textContent)), "text");
+    check("the summary strip says the lock is on, with the lots", /profit lock ON · A\+ only, 4–6 lots/.test(await page.locator("#sumStrip").innerText()), await page.locator("#sumStrip").innerText());
+    const cr = await page.evaluate(() => window.__tmx.coachRules()), sn = await page.evaluate(() => window.__tmx.snapshot());
+    check("the coach is given the three rules, told to enforce them, and told today's state", /THREE DISCIPLINE RULES/.test(cr) && /RANGE FILTER\. If the last 6–8 closed 5m candles/.test(cr) && /Enforce these three rules/.test(cr) && /Discipline now: SENSEX RANGE: no trade \(/.test(sn) && /profit lock ON/.test(sn) && /calls: Entry 2 after the 10:10 stop-out/.test(sn), sn.slice(sn.indexOf("Discipline now"), sn.indexOf("Discipline now") + 400));
+    await page.click('#nav button[data-view="trade"]');
+    await page.waitForSelector("#chain button[data-pick]", { timeout: 15000 });
+    await page.locator('#chain tr.atm button[data-side="CE"]').click();
+    await page.waitForFunction(() => /Rule 1:/.test(document.querySelector("#plan").innerText), null, { timeout: 15000 });
+    let plan = await page.locator("#plan").innerText();
+    check("the Trade tab shows all three rules for the contract picked, each failing here", /✗ Rule 1: Entry 2 after the 10:10 stop-out/.test(plan) && /✗ Rule 2: Profit lock is ON .*not A\+/.test(plan) && /✗ Rule 3: RANGE: no trade/.test(plan), plan.slice(0, 700));
+    await page.check("#f_aplus");
+    plan = await page.locator("#plan").innerText();
+    check("ticking A+ satisfies rule 2 at 4 lots, and rule 1 still stands (a claimed A+ is not a fresh one the app saw)", /✓ Rule 2: Profit lock is ON .*A\+ at 4 lots, allowed/.test(plan) && /✗ Rule 1: Entry 2 after the 10:10 stop-out/.test(plan), plan.slice(0, 700));
+    await page.fill("#f_lots", "8");
+    plan = await page.locator("#plan").innerText();
+    check("eight lots under the lock is oversized, even for an A+", /✗ Rule 2: Profit lock is ON .*8 lots, above the normal 6/.test(plan), plan.slice(0, 700));
+    await page.fill("#f_lots", "4");
+    check("the button says which rules it breaks", /Log anyway \(breaks rule 1 and 3\)/.test(await page.locator("#save").innerText()), await page.locator("#save").innerText());
+    await shot(page, "K-discipline-trade");
+    await page.click("#save");
+    await page.waitForFunction(() => /Log anyway|flagged in the journal/.test(document.querySelector("#saveMsg").textContent), null, { timeout: 60000 });
+    const first = await page.locator("#saveMsg").innerText(), wrote = await page.evaluate(() => [...window.__docs.keys()].filter((k) => k.startsWith("trades/auto")).length);
+    check("the first tap logs nothing: it names each rule broken and says the trade will be flagged", /Rule 1: Entry 2/.test(first) && /Rule 3: RANGE: no trade/.test(first) && /flagged in the journal/.test(first) && wrote === 0, first + " | written " + wrote);
+    const msgs = await logThrough(page);
+    check("a second tap logs it", /Logged\./.test(msgs[msgs.length - 1]), msgs.join(" || "));
+    const logged = await page.evaluate(() => [...window.__docs.entries()].filter(([k]) => k.startsWith("trades/auto")).map(([, v]) => v));
+    check("the logged trade says it went past rules 1 and 3, and records the A+ claim as claimed (no candle)", logged.length === 1 && logged[0].disc && logged[0].disc.overridden === true && JSON.stringify(logged[0].disc.rules) === "[1,3]" && logged[0].aplus && logged[0].aplus.self === true && logged[0].aplus.t === null, JSON.stringify([logged[0] && logged[0].disc, logged[0] && logged[0].aplus]));
+    check("the stored trade is plain data (no undefined, no NaN)", !/undefined|NaN/.test(JSON.stringify(logged[0])), "doc");
+    await page.click('#nav button[data-view="journal"]');
+    await page.waitForFunction(() => /Re-entry: second entry after a stop-out/.test(document.querySelector("#journal").innerText), null, { timeout: 15000 });
+    let jt = await page.locator("#journal").innerText();
+    check("the journal flags the entry that was the second after a stop-out, and the one inside a range", /Re-entry: second entry after a stop-out/.test(jt) && /Entered inside a range \(RANGE: no trade\)/.test(jt), jt.slice(0, 900));
+    await page.waitForFunction(() => /Profit lock: not A\+/.test(document.querySelector("#journal").innerText), null, { timeout: 20000 });
+    jt = await page.locator("#journal").innerText();
+    check("the 11:00 put taken after the lock, with no A+ in the day's record, is flagged", /Profit lock: not A\+/.test(jt) && /Re-entry after a stop-out without a fresh A\+/.test(jt), jt.slice(0, 1200));
+    await page.click('#nav button[data-view="insights"]');
+    const rb = await page.locator("#perfRules").innerText();
+    check("the Insights rule-break table counts them", /Entered inside a range/.test(rb) && /Profit lock: not A\+/.test(rb) && /Re-entry/.test(rb), rb);
+    check("no NaN / undefined on the discipline card", textOK(await page.locator("#discCard").innerText()), "card");
+    check("no console or page errors (discipline)", errors.length === 0, errors.join(" | "));
+    await ctx.close();
+
+    // ---- K2: the one re-entry is allowed on a fresh A+, and the A+ is stamped; the next entry is the second
+    const HOLD2 = [{ at: "11:25", close: 22724.5 }, { at: "11:30", close: 22740 }, { at: "11:35", close: 22748 }];
+    const earlyPut = Object.assign({}, DATA.trades[0], { id: "t1", time: "09:30", type: "PE", instrument: "NIFTY 27 Oct ₹22600 Put" });
+    ({ ctx, page, errors } = await launch("2026-10-23T11:40:30+05:30", { data: { m5: syntheticMorning(14, "11:40", HOLD2), trades: [earlyPut] }, seed: { "trades/s_stop": seed["trades/s_stop"] } }));
+    await levelsReady(page);
+    await page.waitForFunction(() => window.__tmx.AP.ev && window.__tmx.AP.ev.confirmed && window.__tmx.AP.ev.live, null, { timeout: 30000 });
+    await page.waitForFunction(() => [...window.__docs.keys()].some((k) => /^disc\//.test(k) && (window.__docs.get(k).aplus || []).length), null, { timeout: 15000 });
+    const rec = await page.evaluate(() => [...window.__docs.entries()].filter(([k]) => /^disc\//.test(k)).map(([, v]) => v)[0]);
+    check("a confirmed A+ is kept in the day's record: side, break candle, when it was confirmed", rec.date === "2026-10-23" && rec.aplus.length === 1 && rec.aplus[0].dir === 1 && rec.aplus[0].t === "11:25" && rec.aplus[0].conf === "11:40" && /^2026-10-23\|1\|11:25\|11:25$/.test(rec.aplus[0].key), JSON.stringify(rec));
+    await page.click('#nav button[data-view="trade"]');
+    await page.waitForSelector("#chain button[data-pick]", { timeout: 15000 });
+    await page.locator('#chain tr.atm button[data-side="CE"]').click();
+    await page.waitForFunction(() => /Rule 1:/.test(document.querySelector("#plan").innerText), null, { timeout: 15000 });
+    plan = await page.locator("#plan").innerText();
+    check("on a live A+ the box is ticked by itself, and the one re-entry after the stop-out passes on that fresh A+", (await page.locator("#f_aplus").isChecked()) && /the finder has a live A\+ call \(break candle 11:25\)/.test(await page.locator("#f_aplusNote").innerText()) && /✓ Rule 1: One re-entry after the 10:10 stop-out, on a fresh A\+ \(candle 11:25\)/.test(plan) && /✓ Rule 3: Not in a range/.test(plan) && !/✗ Rule/.test(plan), plan.slice(0, 700));
+    const m2 = await logThrough(page);
+    const l2 = await page.evaluate(() => [...window.__docs.entries()].filter(([k]) => k.startsWith("trades/auto")).map(([, v]) => v));
+    check("it logs without a rule being broken, stamped with the A+ it was taken on", /Logged\./.test(m2[m2.length - 1]) && !m2.some((m) => /Rule \d:/.test(m)) && l2.length === 1 && l2[0].aplus && l2[0].aplus.t === "11:25" && !l2[0].disc, JSON.stringify(m2) + JSON.stringify(l2[0] && [l2[0].aplus, l2[0].disc]));
+    await page.click('#nav button[data-view="trade"]');
+    await page.locator('#chain tr.atm button[data-side="CE"]').click();
+    await page.waitForFunction(() => /Entry 2 after the 10:10 stop-out/.test(document.querySelector("#plan").innerText), null, { timeout: 20000 });
+    check("a further entry on that side is the second after the stop-out, A+ or not", /✗ Rule 1: Entry 2 after the 10:10 stop-out/.test(await page.locator("#plan").innerText()), await page.locator("#plan").innerText());
+    check("no console or page errors (re-entry on a fresh A+)", errors.length === 0, errors.join(" | "));
     await ctx.close();
   }
   await browser.close();

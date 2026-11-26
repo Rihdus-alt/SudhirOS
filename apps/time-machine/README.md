@@ -108,6 +108,31 @@ the app can correct itself most, and it needs weeks of use to have anything to s
   brokerage and STT (NFO or BFO rates).
 * **Open positions.** "From my open trade" replays what happens next to a trade you hold, against selling it now.
 
+## The three discipline rules
+
+Adopted 21 Oct 2026 (rule 2 amended 21 Nov 2026), enforced in the desk from 26 Nov 2026. The rules and the A+ hold are pure
+functions in `src/tmx-discipline.js` (held by `test/discipline.test.js`); `src/tmx-discipline-ui.js` is the desk's side.
+
+1. **One re-entry per setup.** After an SL hit the next entry on that side needs a fresh A+; a further entry breaks it.
+2. **Profit lock.** From ₹10,000 realised on the day, only A+ at 4-6 lots (more is oversized).
+3. **Range filter.** The last 6-8 closed 5m candles inside 400 SENSEX points (120 NIFTY): no entries until a 5m close breaks
+   the range by 0.035% of the index. The card shows the two break levels.
+* **A+** is a 5m close beyond the level on both indices *on the same candle*, then the two-candle hold: the next two closed
+  candles must still close beyond the trigger on both, or it is cancelled. The finder shows "holding 1 of 2" meanwhile and only
+  then prices the trade, raises its alert and records the call.
+
+Where it shows: the Now tab's Discipline card; three lines on the Trade tab's checklist, a tick for "this entry is on an A+",
+and a second tap to log an entry that breaks a rule (the trade is stamped, flagged in the journal and counted in Insights); the
+A+ card's "Blocked by your rules" banner; the coach's prompt (the rules in their words, and today's state).
+
+Readings taken where the wording leaves room (all in `config/rules.disc`, so they can be changed without code): an SL hit is a
+closed trade at a loss, at or under the stop it carried; an idea is one side (calls or puts) on one day, either index; the first
+entry after the SL hit is the re-entry, a further one breaks rule 1; the range is as many of the last 6-8 candles as fit; after
+a break a new range needs 6 fresh candles. The journal can only judge A+ from the day's record (`disc/<date>`, one document a
+day, written while the desk is open) or the tick at logging: a day with no record is "unknown", never flagged for A+.
+
+On the real NIFTY tapes of 21-23 Oct the range filter would have been on for 57% of the 5m closes (see the test's output).
+
 ## Layout
 
 ```
@@ -115,7 +140,9 @@ src/tmx-core.js        swing engine + shared maths (Black-76, indicators, setups
 src/tmx-intraday.js    the intraday engine (minute-grid clock, three models, the desk plan on premium candles)
 src/tmx-learn.js       the learning layer (pace, calibration, model weights, speed, the A+ record): pure state in, state out
 src/tmx-aplus.js       the A+ finder's pure parts: stops, break-even, fresh-break detection, the record, lots, the checklist
-src/tmx-aplus-ui.js    the A+ card, its alert, the Trade tab's stop
+src/tmx-aplus-ui.js    the A+ card, its alert, the Trade tab's stop (as of 24 Oct; the live page has moved on, see below)
+src/tmx-discipline.js  the three discipline rules and the A+ hold: pure functions
+src/tmx-discipline-ui.js  the desk's side of them: journal flags, Trade-tab lines, the Now-tab card, the A+ record (spliced into the live page by hand)
 src/tmx-charts.js      small SVG charts in the page's colour tokens
 src/tmx-ui.js          the tab's code (runs inside the desk's script)
 src/tmx-desk.js        the desk's links: the shared analysis, the store, the Trade-tab gate, scan, coach tool, Learning card
@@ -129,7 +156,7 @@ test/                  Node tests, the Python reference dump, and the Chromium h
 
 ```bash
 python3 apps/time-machine/build.py --base <the desk page as saved by Claude> --out-dir <folder>
-node --test apps/time-machine/test/core.test.js apps/time-machine/test/intraday.test.js apps/time-machine/test/charts.test.js apps/time-machine/test/learn.test.js apps/time-machine/test/aplus.test.js
+node --test apps/time-machine/test/core.test.js apps/time-machine/test/intraday.test.js apps/time-machine/test/charts.test.js apps/time-machine/test/learn.test.js apps/time-machine/test/aplus.test.js apps/time-machine/test/discipline.test.js
 node apps/time-machine/test/browser.test.js <folder>/desk-time.full.html [screenshot-folder]
 python3 apps/time-machine/test/ref_dump.py     # regenerates test/ref.json from the Python tool
 ```
@@ -152,5 +179,9 @@ someone edited the page inside a patched region (the gate markup, the build stri
 has been edited that way since 24 Oct 2026 (the stop cap at the SL rule, the 4-6 lot sizing text), so those edits have to be
 ported into `src/` and `build.py` before it round-trips again. Until then, change the live page in place, as the wallet-base
 change of 26 Nov 2026 did, rather than rebuilding it from this repository, which would undo those edits.
+
+The discipline wiring of 26 Nov 2026 (same-candle A+, the two-candle hold, `findBreaks`, the "Blocked by your rules" banner on the A+
+card, the A+ tick on the Trade tab) was made on the live page: `src/tmx-aplus.js`, `src/tmx-discipline*.js` and the tests carry it, but
+`src/tmx-aplus-ui.js` and `build.py` do not yet, so a rebuild from the repository would lose it.
 
 Education and tooling, not financial advice.
