@@ -146,4 +146,11 @@ tab's gate and its second tap, the journal chip, settling stored predictions on 
 
 The base page itself (the user's Trading Desk) is not in this repository: it lives in Claude as an artifact.
 
+`unbuild.py --built <published page> --out <file>` runs build.py's replacements backwards to recover the base page from a
+published one, then builds it again and checks the result equals the published page. It stops and names the region if
+someone edited the page inside a patched region (the gate markup, the build string, the Time tab's script); the live page
+has been edited that way since 24 Oct 2026 (the stop cap at the SL rule, the 4-6 lot sizing text), so those edits have to be
+ported into `src/` and `build.py` before it round-trips again. Until then, change the live page in place, as the wallet-base
+change of 26 Nov 2026 did, rather than rebuilding it from this repository, which would undo those edits.
+
 Education and tooling, not financial advice.
